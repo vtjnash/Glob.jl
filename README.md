@@ -1,3 +1,43 @@
 # Glob
 
 [![Build Status](https://travis-ci.org/vtjnash/Glob.jl.svg?branch=master)](https://travis-ci.org/vtjnash/Glob.jl)
+
+This implementation of Glob is based on the IEEE Std 1003.1, 2004 Edition (Open Group Base Specifications Issue 6) for fnmatch and glob. The specification of which can be found online: [fnmatch](http://pubs.opengroup.org/onlinepubs/009696899/functions/fnmatch.html) and [glob](http://pubs.opengroup.org/onlinepubs/009696899/functions/glob.html).
+
+> Note, because this is based on the POSIX specification, the path separator in a glob pattern is always `/` and the escape character is always `\`. However, the returned path string will always contain the system path separator character `Base.path_separator`. Therefore, it may be true that a path returned by `glob` will fail to match a `Glob.FilenameMatch` constructed from the same pattern.
+
+## Usage
+
+Glob is implemented to have both a functional form and an object-oriented form. There is no "correct" choice; you are encouraged to pick whichever is better suited to your application.
+
+* `glob(pattern, [directory::String])` :
+  * Returns a list of all files matching `pattern` in `directory`.
+  * If directory is not specified, it defaults to the current working directory.
+  * Pattern can be any of:
+    1. A `Glob.GlobMatch` object:
+
+           glob"a/?/c"
+
+    2. A string, which will be converted into a GlobMatch expression:
+
+           "a/?/c" # equivalent to 1, above
+
+    3. A vector of strings and/or objects which implement `ismatch`, including `Regex` and `Glob.FilenameMatch` objects
+
+           ["a", r".", fn"c"] # again, equivalent to 1, above
+
+        * Each element of the vector will be used to match another level in the file hierarchy
+        * no conversion of strings to `Glob.FilenameMatch` objects or directory splitting on `/` will occur.
+
+* `readdir(pattern::GlobMatch, [directory::String])` :
+  * alias for `glob()`
+
+* `glob"pattern"` :
+  * Returns a `Glob.GlobMatch` object, which can be used with `glob()` or `readdir()`. See above descriptions.
+
+* `fn"pattern"iped` :
+  * Returns a `Glob.FilenameMatch` object, which can be used with `ismatch()`. Available flags are:
+    * `i` = `CASELESS` : Performs case-insensitive matching
+    * `p` = `PERIOD` : A leading period (`.`) character must be exactly matched by a period (`.`) character (not a `?`, `*`, or `[]`). A leading period is a period at the beginning of a string, or a period after a slash if PATHNAME is true.
+    * `e` = `NOESCAPE` : Do not treat backslash (`\`) as a special character (outside of `[]`)
+    * `d` = `PATHNAME` : A slash (`/`) character must be exactly matched by a slash (`/`) character (not a `?`, `*`, or `[]`)
