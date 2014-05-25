@@ -51,5 +51,5 @@ Glob is implemented to have both a functional form and an object-oriented form. 
 ## Unimplemented features
 
  * `[.` collating symbols only accept single characters (the Unicode locale has no collating symbols defined)
- * `[=` equivalence classes only match the exact character specified (the Unicode locale has not equivalence classes defined)
+ * `[=` equivalence classes only match the exact character specified (the Unicode locale has no equivalence classes defined)
  * Advanced extended features (beyond the POSIX spec) such as `{}` groups, have not yet been implemented
