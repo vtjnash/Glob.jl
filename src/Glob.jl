@@ -4,10 +4,11 @@ import Base: ismatch, match, readdir, show
 
 export glob, @fn_str, @fn_mstr, @glob_str, @glob_mstr
 
-const CASELESS = 1 << 0 # Do case-insensitive matching
-const PERIOD   = 1 << 1 # A leading period (.) character must be exactly matched by a period (.) character
-const NOESCAPE = 1 << 2 # Do not treat backslash (\) as a special character
-const PATHNAME = 1 << 3 # Slash (/) character must be exactly matched by a slash (/) character
+const CASELESS = 1 << 0 # i -- Do case-insensitive matching
+const PERIOD   = 1 << 1 # p -- A leading period (.) character must be exactly matched by a period (.) character
+const NOESCAPE = 1 << 2 # e -- Do not treat backslash (\) as a special character
+const PATHNAME = 1 << 3 # d -- Slash (/) character must be exactly matched by a slash (/) character
+const EXTENDED = 1 << 4 # x -- Support extended (bash-like) features
 
 immutable FilenameMatch{S<:String}
     pattern::S
@@ -24,6 +25,7 @@ function FilenameMatch(pattern::String, flags::String)
                    f=='p' ? PERIOD    :
                    f=='e' ? NOESCAPE  :
                    f=='d' ? PATHNAME  :
+                   f=='x' ? EXTENDED   :
                    error("unknown Filename Matcher flag: $f")
     end
     FilenameMatch(pattern, options)
@@ -37,14 +39,16 @@ function show(io::IO, fn::FilenameMatch)
     (fn.options&PERIOD  )!=0 && print(io, 'p')
     (fn.options&NOESCAPE)!=0 && print(io, 'e')
     (fn.options&PATHNAME)!=0 && print(io, 'd')
+    (fn.options&EXTENDED)!=0 && print(io, 'x')
 end
 
 function ismatch(fn::FilenameMatch, s::String)
     pattern = fn.pattern
+    caseless = (fn.options&CASELESS)!=0
     periodfl = (fn.options&PERIOD  )!=0
     noescape = (fn.options&NOESCAPE)!=0
-    caseless = (fn.options&CASELESS)!=0
     pathname = (fn.options&PATHNAME)!=0
+    extended = (fn.options&EXTENDED)!=0
     mi = start(pattern) # current index into pattern
     i = start(s) # current index into s
     starmatch = i
@@ -66,7 +70,7 @@ function ismatch(fn::FilenameMatch, s::String)
             else
                 c, i = next(s, i)
                 if mc == '['
-                    mi, valid, match = _match(pattern, mi, c, caseless)
+                    mi, valid, match = _match(pattern, mi, c, caseless, extended)
                     if pathname & valid & match & (c == '/')
                         match = false
                     end
@@ -113,7 +117,78 @@ filter(fn::FilenameMatch, v)  = filter(x->ismatch(fn,x), v)
 filter!(fn::FilenameMatch, d::Dict) = filter!((k,v)->ismatch(fn,k),d)
 filter(fn::FilenameMatch, d::Dict) = filter!(fn,copy(d))
 
-function _match(pat::String, i0, c::Char, caseless::Bool) # returns (i, valid, match)
+function _match_bracket(pat::String, mc::Char, i, cl::Char, cu::Char) # returns (mc, i, valid, match)
+    if done(pat, i)
+        return (mc, i, false, false)
+    end
+    mc2, j = next(pat, i)
+    if (mc2 != ':') & (mc2 != '.') & (mc2 != '=')
+        return (mc, i, false, true)
+    end
+    mc3 = mc4 = '\0'
+    k0 = k1 = k2 = k3 = j
+    matchfail = false
+    while mc3 != mc2 && mc4 != ']'
+        if done(pat, k3)
+            return (mc, i, false, false)
+        end
+        mc3 = mc4
+        k0 = k1
+        k1 = k2
+        k2 = k3
+        mc4, k3 = next(pat, k3)
+    end
+    if mc2 == ':'
+        phrase = SubString(pat, j, k0)
+        match = (
+            if phrase == "alnum"
+                isalnum(cl)
+            elseif phrase == "alpha"
+                isalpha(cl)
+            elseif phrase == "blank"
+                isblank(cl)
+            elseif phrase == "cntrl"
+                iscntrl(cl)
+            elseif phrase == "digit"
+                isdigit(cl)
+            elseif phrase == "graph"
+                isgraph(cl)
+            elseif phrase == "lower"
+                islower(cl) | islower(cu)
+            elseif phrase == "print"
+                isprint(cl)
+            elseif phrase == "punct"
+                ispunct(cl)
+            elseif phrase == "space"
+                isspace(cl)
+            elseif phrase == "upper"
+                isupper(cl) | isupper(cu)
+            elseif phrase == "xdigit"
+                isxdigit(cl)
+            else
+                error(string("invalid character expression [:",phrase,":]"))
+            end)
+        return (mc, k3, true, match)
+    elseif mc2 == '.'
+        if j != k0
+            error(string("only single characters are currently supported as collating symbols, got [.", SubString(pat, j, k0), ".]"))
+            #match = (pat[j:k0] == s[ci:ci+(k0-j)])
+            #return (mc, k3, true, match)
+        end
+        mc, j = next(pat, j)
+        return (mc, k3, false, true)
+    else #if mc2 == '='
+        if j != k0
+            error(string("only single characters are currently supported as character equivalents, got [=", SubString(pat, j, k0), "=]"))
+        end
+        mc, j = next(pat, j)
+        match = (cl==mc) | (cu==mc)
+        return (mc, k3, true, match)
+    end
+end
+
+
+function _match(pat::String, i0, c::Char, caseless::Bool, extended::Bool) # returns (i, valid, match)
     if caseless
         cl = lowercase(c)
         cu = uppercase(c)
@@ -129,10 +204,6 @@ function _match(pat::String, i0, c::Char, caseless::Bool) # returns (i, valid, m
     if mc == '!'
         negate = true
         i = j
-        if done(pat, i)
-            return (i0, false, c=='[')
-        end
-        mc, j = next(pat, i)
     end
     match = false
     notfirst = false
@@ -142,52 +213,51 @@ function _match(pat::String, i0, c::Char, caseless::Bool) # returns (i, valid, m
             return (i, true, match$negate)
         end
         notfirst = true
+        if (mc == '[')
+            mc, i, valid, match2 = _match_bracket(pat, mc, i, cl, cu)
+            if valid
+                match |= match2
+                continue
+            elseif !match2
+                return (i0, false, c=='[')
+            end
+        elseif extended & (mc == '\\')
+            if done(pat, i)
+                return (i0, false, c=='[')
+            end
+            mc, i = next(pat, i)
+        end
         if done(pat, i)
             return (i0, false, c=='[')
         end
         mc2, j = next(pat, i)
-        if (mc == '[') & ((mc2 == '.') | (mc2 == ':') | (mc2 == '='))
-            error("[: [. and [= are not currently supported")
-        else
-            if mc == '\\'
-                mc, i = mc2, j
-                if done(pat, i)
+        if mc2 == '-'
+            if done(pat, j)
+                return (i0, false, c=='[')
+            end
+            mc2, j = next(pat, j)
+            if mc2 == ']'
+                match |= ((cl == mc) | (cu == mc) | (c == '-'))
+                return (j, true, match$negate)
+            end
+            if mc2 == '['
+                mc2, j, valid, match2 = _match_bracket(pat, mc2, j, cl, cu)
+                if valid
+                    error("[: and [= are not valid range endpoints")
+                elseif !match2
                     return (i0, false, c=='[')
                 end
-                mc2, j = next(pat, i)
-            end
-            if mc2 == '-'
+            elseif extended & (mc2 == '\\')
                 if done(pat, j)
                     return (i0, false, c=='[')
                 end
                 mc2, j = next(pat, j)
-                if mc2 == ']'
-                    match |= ((cl == mc) | (cu == mc) | (c == '-'))
-                    return (j, true, match$negate)
-                end
-                if mc2 == '['
-                    if done(pat, j)
-                        return (i0, false, c=='[')
-                    end
-                    mc3, k = next(pat, j)
-                    if mc3 == '.'
-                        error("[. is not currently supported")
-                    end
-                    if (mc3 == ':') | (mc3 == '=')
-                        error("[: and [= are not valid range endpoints")
-                    end
-                elseif mc2 == '\\'
-                    if done(pat, j)
-                        return (i0, false, c=='[')
-                    end
-                    mc2, j = next(pat, j)
-                end
-                match |= (mc <= cl <= mc2)
-                match |= (mc <= cu <= mc2)
-                i = j
-            else
-                match |= ((cl == mc) | (cu == mc))
             end
+            match |= (mc <= cl <= mc2)
+            match |= (mc <= cu <= mc2)
+            i = j
+        else
+            match |= ((cl == mc) | (cu == mc))
         end
     end
     return (i0, false, c=='[')
@@ -202,6 +272,9 @@ immutable GlobMatch
 end
 GlobMatch(gm::GlobMatch) = gm
 function GlobMatch(pattern::String)
+    if isempty(pattern) || first(pattern) == '/'
+        error("Glob pattern cannot be empty or start with a / character")
+    end
     pat = split(pattern, '/')
     S = eltype(pat)
     if !isleaftype(S)
@@ -210,19 +283,20 @@ function GlobMatch(pattern::String)
         S = Union(S, FilenameMatch{S})
     end
     glob = Array(S, length(pat))
+    extended = false
     for i = 1:length(pat)
         p = pat[i]
         j = start(p)
         ispattern = false
         while !done(p, j)
             c, j = next(p, j)
-            if c == '\\'
+            if extended & (c == '\\')
                 if done(p, j)
                     break
                 end
                 c, j = next(p, j)
             elseif (c == '*') | (c == '?') |
-                    (c == '[' && _match(p, j, '\0', false)[2])
+                    (c == '[' && _match(p, j, '\0', false, extended)[2])
                 ispattern = true
                 break
             end
