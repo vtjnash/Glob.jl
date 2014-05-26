@@ -90,6 +90,10 @@ end
 @test ismatch(fn"ab/c/d"dp, "ab/c/d")
 @test !ismatch(fn"ab/c/d"dp, "ab/c?d")
 @test !ismatch(fn"ab/./d"dp, "ab/?/d")
+@test !ismatch(fn"ab*d"dp, "aba/d")
+@test !ismatch(fn"ab*d"dp, "ab/d")
+@test ismatch(fn"ab*d", "ab/d")
+@test ismatch(fn"ab*d", "aba/d")
 @test ismatch(fn"[a-z]"i, "B")
 @test !ismatch(fn"[a-z]"i, "_")
 @test ismatch(fn"[A-z]"i, "_")
@@ -108,6 +112,8 @@ end
 @test !ismatch(fn"./?b"pd, "./.b")
 @test ismatch(fn"./.b"pd, "./.b")
 @test !ismatch(fn"?/.b"pd, "./.b")
+@test ismatch(fn"""./.b"""pd, "./.b")
+@test !ismatch(fn"""?/.b"""pd, "./.b")
 @test ismatch(fn"_[[:blank:][.a.]-c]_", "_b_")
 @test !ismatch(fn"_[[:blank:][.a.]-c]_", "_-_")
 @test ismatch(fn"_[[:blank:][.a.]-c]_", "_ _")
@@ -115,6 +121,8 @@ end
 @test !ismatch(fn"_[[:alnum:]]_", "_[_")
 @test !ismatch(fn"_[[:alnum:]]_", "_]_")
 @test !ismatch(fn"_[[:alnum:]]_", "_:_")
+@test ismatch(fn"_[[:alpha:]]_", "_z_")
+@test !ismatch(fn"_[[:alpha:]]_", "_[_")
 @test ismatch(fn"_[[:cntrl:]]_", "_\0_")
 @test ismatch(fn"_[[:cntrl:]]_", "_\b_")
 @test !ismatch(fn"_[[:cntrl:]]_", "_:_")
@@ -156,7 +164,7 @@ end
 @test !ismatch(fn"\?"e, "?")
 
 @test tuple(map(typeof, glob"ab/?/d".pattern)...) <: (String, Glob.FilenameMatch, String)
-@test tuple(map(typeof, glob"ab/*/d".pattern)...) <: (String, Glob.FilenameMatch, String)
+@test tuple(map(typeof, glob"""ab/*/d""".pattern)...) <: (String, Glob.FilenameMatch, String)
 @test length(glob"ab/[/d".pattern) == 3
 @test length(glob"ab/[/]d".pattern) == 3
 @test tuple(map(typeof, glob"ab/[/]d".pattern)...) <: (String, String, String)

@@ -13,4 +13,7 @@ before_install:
   - sudo apt-get update -qq -y
   - sudo apt-get install libpcre3-dev julia -y
 script:
-  - julia -e 'Pkg.init(); Pkg.clone(pwd()); if VERSION >= v"0.3-"; Pkg.test("Glob"); else; evalfile(Pkg.dir("Glob","test","runtests.jl")); end'
+  - if [ $JULIAVERSION = "julianightlies" ]; then julia --code-coverage test/runtests.jl; fi
+  - if [ $JULIAVERSION = "juliareleases" ]; then julia test/runtests.jl; fi
+after_success:
+  - if [ $JULIAVERSION = "julianightlies" ]; then julia -e 'Pkg.init(); Pkg.add("Coverage"); using Coverage; Coveralls.submit(Coveralls.process_folder())'; fi
