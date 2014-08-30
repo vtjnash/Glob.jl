@@ -343,6 +343,10 @@ function glob(pattern, prefix::String="")
     return matches
 end
 
+function glob(pattern::String)
+    first(pattern) == '/' ? glob(pattern[2:end], "/") : glob(pattern, "")
+end
+
 function _glob!(matches, pat::String)
     i = 1
     last = length(matches)
