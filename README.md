@@ -19,9 +19,11 @@ Glob is implemented to have both a functional form and an object-oriented form. 
 
             glob"a/?/c"
 
+       Attempting to creat a GlobMatch object from a string with a leading `/` or the empty string is an error.
+
     2. A string, which will be converted into a GlobMatch expression:
 
-            "a/?/c" # equivalent to 1, above
+            "a/?/c" # equivalent to 1, above, except that a leading `/` is allowed here
 
     3. A vector of strings and/or objects which implement `ismatch`, including `Regex` and `Glob.FilenameMatch` objects
 
@@ -31,8 +33,6 @@ Glob is implemented to have both a functional form and an object-oriented form. 
         * no conversion of strings to `Glob.FilenameMatch` objects or directory splitting on `/` will occur.
 
     4. A trailing `/` (or equivalently, a trailing empty string in the vector) will cause glob to only match directories
-
-    5. Attempting to creat a GlobMatch object from a string with a leading `/` or the empty string is an error
 
 * `readdir(pattern::GlobMatch, [directory::String])` ::
   * alias for `glob()`
