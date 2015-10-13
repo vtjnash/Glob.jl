@@ -10,15 +10,17 @@ const NOESCAPE = 1 << 2 # e -- Do not treat backslash (\) as a special character
 const PATHNAME = 1 << 3 # d -- Slash (/) character must be exactly matched by a slash (/) character
 const EXTENDED = 1 << 4 # x -- Support extended (bash-like) features
 
-immutable FilenameMatch{S<:String}
+using Compat
+
+immutable FilenameMatch{S<:AbstractString}
     pattern::S
-    options::Uint32
+    options::UInt32
     FilenameMatch(pattern, options) = new(pattern, options)
 end
-function FilenameMatch{S<:String}(pattern::S, options::Integer=0)
+function FilenameMatch{S<:AbstractString}(pattern::S, options::Integer=0)
     FilenameMatch{S}(pattern, options)
 end
-function FilenameMatch(pattern::String, flags::String)
+function FilenameMatch(pattern::AbstractString, flags::AbstractString)
     options = 0
     for f in flags
         options |= f=='i' ? CASELESS  :
@@ -42,7 +44,7 @@ function show(io::IO, fn::FilenameMatch)
     (fn.options&EXTENDED)!=0 && print(io, 'x')
 end
 
-function ismatch(fn::FilenameMatch, s::String)
+function ismatch(fn::FilenameMatch, s::AbstractString)
     pattern = fn.pattern
     caseless = (fn.options&CASELESS)!=0
     periodfl = (fn.options&PERIOD  )!=0
@@ -117,7 +119,7 @@ filter(fn::FilenameMatch, v)  = filter(x->ismatch(fn,x), v)
 filter!(fn::FilenameMatch, d::Dict) = filter!((k,v)->ismatch(fn,k),d)
 filter(fn::FilenameMatch, d::Dict) = filter!(fn,copy(d))
 
-function _match_bracket(pat::String, mc::Char, i, cl::Char, cu::Char) # returns (mc, i, valid, match)
+function _match_bracket(pat::AbstractString, mc::Char, i, cl::Char, cu::Char) # returns (mc, i, valid, match)
     if done(pat, i)
         return (mc, i, false, false)
     end
@@ -146,7 +148,7 @@ function _match_bracket(pat::String, mc::Char, i, cl::Char, cu::Char) # returns 
             elseif phrase == "alpha"
                 isalpha(cl)
             elseif phrase == "blank"
-                isblank(cl)
+                (cl == ' ' || cl == '\t')
             elseif phrase == "cntrl"
                 iscntrl(cl)
             elseif phrase == "digit"
@@ -188,7 +190,7 @@ function _match_bracket(pat::String, mc::Char, i, cl::Char, cu::Char) # returns 
 end
 
 
-function _match(pat::String, i0, c::Char, caseless::Bool, extended::Bool) # returns (i, valid, match)
+function _match(pat::AbstractString, i0, c::Char, caseless::Bool, extended::Bool) # returns (i, valid, match)
     if caseless
         cl = lowercase(c)
         cu = uppercase(c)
@@ -202,6 +204,8 @@ function _match(pat::String, i0, c::Char, caseless::Bool, extended::Bool) # retu
     mc, j = next(pat, i)
     negate = false
     if mc == '!'
+        h
+
         negate = true
         i = j
     end
@@ -271,7 +275,7 @@ immutable GlobMatch
     GlobMatch(pattern) = isempty(pattern) ? error("GlobMatch pattern cannot be an empty vector") : new(pattern)
 end
 GlobMatch(gm::GlobMatch) = gm
-function GlobMatch(pattern::String)
+function GlobMatch(pattern::AbstractString)
     if isempty(pattern) || first(pattern) == '/'
         error("Glob pattern cannot be empty or start with a / character")
     end
@@ -280,7 +284,7 @@ function GlobMatch(pattern::String)
     if !isleaftype(S)
         S = Any
     else
-        S = Union(S, FilenameMatch{S})
+        @compat S = Union{S, FilenameMatch{S}}
     end
     glob = Array(S, length(pat))
     extended = false
@@ -333,9 +337,9 @@ function show(io::IO, gm::GlobMatch)
     print(io, '"')
 end
 
-readdir(pattern::GlobMatch, prefix::String="") = glob(pattern, prefix)
+readdir(pattern::GlobMatch, prefix::AbstractString="") = glob(pattern, prefix)
 
-function glob(pattern, prefix::String="")
+function glob(pattern, prefix::AbstractString="")
     matches = ByteString[prefix]
     for pat in GlobMatch(pattern).pattern
         matches = _glob!(matches, pat)
@@ -343,7 +347,7 @@ function glob(pattern, prefix::String="")
     return matches
 end
 
-function _glob!(matches, pat::String)
+function _glob!(matches, pat::AbstractString)
     i = 1
     last = length(matches)
     while i <= last
