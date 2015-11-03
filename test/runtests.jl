@@ -196,7 +196,13 @@ function test_string(x1)
         "\noriginal: ", x1,
         "\n\nstringify: ", x2))
 end
-test_string("""Glob.GlobMatch(Any["base",r"h\.+"])""")
+
+if VERSION > v"0.4-dev"
+    test_string("""Glob.GlobMatch(Any["base",r"h\.+"])""")
+else
+    test_string("""Glob.GlobMatch({"base",r"h\.+"})""")
+end
+
 test_string("""glob"base/*/a/[b]\"""")
 test_string("""fn"base/*/a/[b]\"ipedx""")
 test_string("""fn"base/*/a/[b]\"""")
