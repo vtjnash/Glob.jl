@@ -314,7 +314,7 @@ end
 
 function show(io::IO, gm::GlobMatch)
     for pat in gm.pattern
-        if !isa(pat, String) && !isa(pat, FilenameMatch)
+        if !isa(pat, AbstractString) && !isa(pat, FilenameMatch)
             print(io, "Glob.GlobMatch(")
             show(io, gm.pattern)
             print(io, ')')

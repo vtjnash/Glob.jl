@@ -2,10 +2,20 @@ module GlobTest
 include("../src/Glob.jl")
 using .Glob
 using Base.Test
+using Compat
 
 if VERSION < v"0.3-"
     macro test_throws(a,b)
         :( Base.Test.@test_throws($b) )
+    end
+end
+
+macro test_types(arr, types)
+    quote
+        @test length($arr) == length($types)
+        for i in 1:length($arr)
+            @test isa($arr[i], $types[i])
+        end
     end
 end
 
@@ -163,21 +173,21 @@ end
 @test ismatch(fn"\?"e, "\\!")
 @test !ismatch(fn"\?"e, "?")
 
-@test tuple(map(typeof, glob"ab/?/d".pattern)...) <: (String, Glob.FilenameMatch, String)
-@test tuple(map(typeof, glob"""ab/*/d""".pattern)...) <: (String, Glob.FilenameMatch, String)
+@test_types glob"ab/?/d".pattern (AbstractString, Glob.FilenameMatch, AbstractString)
+@test_types glob"""ab/*/d""".pattern (AbstractString, Glob.FilenameMatch, AbstractString)
 @test length(glob"ab/[/d".pattern) == 3
 @test length(glob"ab/[/]d".pattern) == 3
-@test tuple(map(typeof, glob"ab/[/]d".pattern)...) <: (String, String, String)
-@test tuple(map(typeof, glob"ab/[/d".pattern)...) <: (String, String, String)
-@test tuple(map(typeof, glob"ab/[]/d".pattern)...) <: (String, String, String)
-@test tuple(map(typeof, glob"ab/[]]/d".pattern)...) <: (String, Glob.FilenameMatch, String)
+@test_types glob"ab/[/]d".pattern (AbstractString, AbstractString, AbstractString)
+@test_types glob"ab/[/d".pattern (AbstractString, AbstractString, AbstractString)
+@test_types glob"ab/[]/d".pattern (AbstractString, AbstractString, AbstractString)
+@test_types glob"ab/[]]/d".pattern (AbstractString, Glob.FilenameMatch, AbstractString)
 
-@test glob("*") == filter(x->!beginswith(x,'.'), readdir()) == readdir(glob"*")
-@test glob(".*") == filter(x->beginswith(x,'.'), readdir()) == readdir(glob".*")
+@test glob("*") == filter(x->!startswith(x,'.'), readdir()) == readdir(glob"*")
+@test glob(".*") == filter(x->startswith(x,'.'), readdir()) == readdir(glob".*")
 @test isempty(Glob.glob("[.]*"))
 @test glob([r".*"]) == readdir()
 @test glob([".", r".*"]) == map(x->joinpath(".",x), readdir())
-@test all([!beginswith(x,'.') for x in Glob.glob("*.*")])
+@test all([!startswith(x,'.') for x in Glob.glob("*.*")])
 
 function test_string(x1)
     x2 = string(eval(parse(x1)))
@@ -186,7 +196,7 @@ function test_string(x1)
         "\noriginal: ", x1,
         "\n\nstringify: ", x2))
 end
-test_string("""Glob.GlobMatch({"base",r"h\.+"})""")
+test_string("""Glob.GlobMatch(Any["base",r"h\.+"])""")
 test_string("""glob"base/*/a/[b]\"""")
 test_string("""fn"base/*/a/[b]\"ipedx""")
 test_string("""fn"base/*/a/[b]\"""")
