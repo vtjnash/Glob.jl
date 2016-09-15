@@ -1,3 +1,5 @@
+VERSION > v"0.4" && __precompile__()
+
 module Glob
 
 import Base: ismatch, match, readdir, show
