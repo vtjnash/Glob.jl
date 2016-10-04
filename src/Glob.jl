@@ -13,6 +13,7 @@ const PATHNAME = 1 << 3 # d -- Slash (/) character must be exactly matched by a 
 const EXTENDED = 1 << 4 # x -- Support extended (bash-like) features
 
 using Compat
+import Compat.String
 
 immutable FilenameMatch{S<:AbstractString}
     pattern::S
@@ -340,7 +341,7 @@ end
 readdir(pattern::GlobMatch, prefix::AbstractString="") = glob(pattern, prefix)
 
 function glob(pattern, prefix::AbstractString="")
-    matches = ByteString[prefix]
+    matches = String[prefix]
     for pat in GlobMatch(pattern).pattern
         matches = _glob!(matches, pat)
     end
@@ -365,7 +366,7 @@ function _glob!(matches, pat::AbstractString)
 end
 
 function _glob!(matches, pat)
-    m2 = ByteString[]
+    m2 = String[]
     for m in matches
         if isempty(m)
             for d in readdir()
