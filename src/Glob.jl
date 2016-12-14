@@ -1,8 +1,9 @@
-VERSION > v"0.4" && __precompile__()
+__precompile__()
 
 module Glob
 
 import Base: ismatch, match, readdir, show
+isdefined(Base, :⊻) || const ⊻ = Base.:$ # xor compat for v0.6
 
 export glob, @fn_str, @fn_mstr, @glob_str, @glob_mstr
 
@@ -11,9 +12,6 @@ const PERIOD   = 1 << 1 # p -- A leading period (.) character must be exactly ma
 const NOESCAPE = 1 << 2 # e -- Do not treat backslash (\) as a special character
 const PATHNAME = 1 << 3 # d -- Slash (/) character must be exactly matched by a slash (/) character
 const EXTENDED = 1 << 4 # x -- Support extended (bash-like) features
-
-using Compat
-import Compat.String
 
 immutable FilenameMatch{S<:AbstractString}
     pattern::S
@@ -45,6 +43,7 @@ function show(io::IO, fn::FilenameMatch)
     (fn.options&NOESCAPE)!=0 && print(io, 'e')
     (fn.options&PATHNAME)!=0 && print(io, 'd')
     (fn.options&EXTENDED)!=0 && print(io, 'x')
+    nothing
 end
 
 function ismatch(fn::FilenameMatch, s::AbstractString)
@@ -215,7 +214,7 @@ function _match(pat::AbstractString, i0, c::Char, caseless::Bool, extended::Bool
     while !done(pat,i)
         mc, i = next(pat, i)
         if (mc == ']') & notfirst
-            return (i, true, match$negate)
+            return (i, true, match ⊻ negate)
         end
         notfirst = true
         if (mc == '[')
@@ -243,7 +242,7 @@ function _match(pat::AbstractString, i0, c::Char, caseless::Bool, extended::Bool
             mc2, j = next(pat, j)
             if mc2 == ']'
                 match |= ((cl == mc) | (cu == mc) | (c == '-'))
-                return (j, true, match$negate)
+                return (j, true, match ⊻ negate)
             end
             if mc2 == '['
                 mc2, j, valid, match2 = _match_bracket(pat, mc2, j, cl, cu)
@@ -285,7 +284,7 @@ function GlobMatch(pattern::AbstractString)
     if !isleaftype(S)
         S = Any
     else
-        @compat S = Union{S, FilenameMatch{S}}
+        S = Union{S, FilenameMatch{S}}
     end
     glob = Array(S, length(pat))
     extended = false
