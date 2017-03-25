@@ -190,7 +190,8 @@ function test_string(x1)
         "\n\nstringify: ", x2))
 end
 
-test_string("""Glob.GlobMatch(Any["base",r"h\.+"])""")
+_space = VERSION < v"0.6.0-dev" ? "" : " "
+test_string("""Glob.GlobMatch(Any["base",$(_space)r"h\.+"])""")
 test_string("""glob"base/*/a/[b]\"""")
 test_string("""fn"base/*/a/[b]\"ipedx""")
 test_string("""fn"base/*/a/[b]\"""")
