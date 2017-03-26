@@ -2,6 +2,8 @@ __precompile__()
 
 module Glob
 
+using Compat
+
 import Base: ismatch, match, readdir, show
 isdefined(Base, :⊻) || const ⊻ = Base.:$ # xor compat for v0.6
 
@@ -16,7 +18,7 @@ const EXTENDED = 1 << 4 # x -- Support extended (bash-like) features
 immutable FilenameMatch{S<:AbstractString}
     pattern::S
     options::UInt32
-    FilenameMatch(pattern, options) = new(pattern, options)
+    @compat (::Type{FilenameMatch{S}}){S}(pattern, options) = new{S}(pattern, options)
 end
 function FilenameMatch{S<:AbstractString}(pattern::S, options::Integer=0)
     FilenameMatch{S}(pattern, options)
@@ -286,7 +288,7 @@ function GlobMatch(pattern::AbstractString)
     else
         S = Union{S, FilenameMatch{S}}
     end
-    glob = Array(S, length(pat))
+    glob = Array{S}(length(pat))
     extended = false
     for i = 1:length(pat)
         p = pat[i]
