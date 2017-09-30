@@ -5,7 +5,6 @@ module Glob
 using Compat
 
 import Base: ismatch, match, readdir, show
-isdefined(Base, :⊻) || const ⊻ = Base.:$ # xor compat for v0.6
 
 export glob, @fn_str, @fn_mstr, @glob_str, @glob_mstr
 
@@ -18,7 +17,7 @@ const EXTENDED = 1 << 4 # x -- Support extended (bash-like) features
 immutable FilenameMatch{S<:AbstractString}
     pattern::S
     options::UInt32
-    @compat (::Type{FilenameMatch{S}}){S}(pattern, options) = new{S}(pattern, options)
+    (::Type{FilenameMatch{S}}){S}(pattern, options) = new{S}(pattern, options)
 end
 function FilenameMatch{S<:AbstractString}(pattern::S, options::Integer=0)
     FilenameMatch{S}(pattern, options)
@@ -283,7 +282,7 @@ function GlobMatch(pattern::AbstractString)
     end
     pat = split(pattern, '/')
     S = eltype(pat)
-    if !isleaftype(S)
+    if !isconcrete(S)
         S = Any
     else
         S = Union{S, FilenameMatch{S}}
