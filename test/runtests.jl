@@ -1,10 +1,8 @@
-module GlobTest
-include("../src/Glob.jl")
-using .Glob
+using Glob
 using Base.Test
 
 macro test_types(arr, types)
-    quote
+    return quote
         @test length($arr) == length($types)
         for i in 1:length($arr)
             @test isa($arr[i], $types[i])
@@ -190,13 +188,10 @@ function test_string(x1)
         "\n\nstringify: ", x2))
 end
 
-_space = VERSION < v"0.6.0-dev.2505" ? "" : " "
-test_string("""Glob.GlobMatch(Any["base",$(_space)r"h\.+"])""")
+test_string("""Glob.GlobMatch(Any["base", r"h\\.+"])""")
 test_string("""glob"base/*/a/[b]\"""")
 test_string("""fn"base/*/a/[b]\"ipedx""")
 test_string("""fn"base/*/a/[b]\"""")
 
 @test_throws ErrorException Glob.GlobMatch("")
 @test_throws ErrorException Glob.GlobMatch("/a/b/c")
-
-end

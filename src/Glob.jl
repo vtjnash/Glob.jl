@@ -2,10 +2,8 @@ __precompile__()
 
 module Glob
 
-using Compat
-
 import Base: ismatch, match, readdir, show
-isdefined(Base, :⊻) || const ⊻ = Base.:$ # xor compat for v0.6
+isdefined(Base, :isconcrete) || (const isconcrete = Base.isleaftype) # Compat for v0.7
 
 export glob, @fn_str, @fn_mstr, @glob_str, @glob_mstr
 
@@ -15,46 +13,46 @@ const NOESCAPE = 1 << 2 # e -- Do not treat backslash (\) as a special character
 const PATHNAME = 1 << 3 # d -- Slash (/) character must be exactly matched by a slash (/) character
 const EXTENDED = 1 << 4 # x -- Support extended (bash-like) features
 
-immutable FilenameMatch{S<:AbstractString}
+struct FilenameMatch{S<:AbstractString}
     pattern::S
     options::UInt32
-    @compat (::Type{FilenameMatch{S}}){S}(pattern, options) = new{S}(pattern, options)
+    FilenameMatch{S}(pattern, options) where {S} = new{S}(pattern, options)
 end
-function FilenameMatch{S<:AbstractString}(pattern::S, options::Integer=0)
-    FilenameMatch{S}(pattern, options)
+function FilenameMatch(pattern::S, options::Integer=0) where {S<:AbstractString}
+    return FilenameMatch{S}(pattern, options)
 end
 function FilenameMatch(pattern::AbstractString, flags::AbstractString)
     options = 0
     for f in flags
-        options |= f=='i' ? CASELESS  :
-                   f=='p' ? PERIOD    :
-                   f=='e' ? NOESCAPE  :
-                   f=='d' ? PATHNAME  :
-                   f=='x' ? EXTENDED   :
+        options |= (f == 'i') ? CASELESS :
+                   (f == 'p') ? PERIOD   :
+                   (f == 'e') ? NOESCAPE :
+                   (f == 'd') ? PATHNAME :
+                   (f == 'x') ? EXTENDED :
                    error("unknown Filename Matcher flag: $f")
     end
-    FilenameMatch(pattern, options)
+    return FilenameMatch(pattern, options)
 end
 macro fn_str(pattern, flags...) FilenameMatch(pattern, flags...) end
 macro fn_mstr(pattern, flags...) FilenameMatch(pattern, flags...) end
 
 function show(io::IO, fn::FilenameMatch)
     print(io, "fn\"", fn.pattern, '"')
-    (fn.options&CASELESS)!=0 && print(io, 'i')
-    (fn.options&PERIOD  )!=0 && print(io, 'p')
-    (fn.options&NOESCAPE)!=0 && print(io, 'e')
-    (fn.options&PATHNAME)!=0 && print(io, 'd')
-    (fn.options&EXTENDED)!=0 && print(io, 'x')
+    (fn.options & CASELESS) != 0 && print(io, 'i')
+    (fn.options & PERIOD  ) != 0 && print(io, 'p')
+    (fn.options & NOESCAPE) != 0 && print(io, 'e')
+    (fn.options & PATHNAME) != 0 && print(io, 'd')
+    (fn.options & EXTENDED) != 0 && print(io, 'x')
     nothing
 end
 
 function ismatch(fn::FilenameMatch, s::AbstractString)
     pattern = fn.pattern
-    caseless = (fn.options&CASELESS)!=0
-    periodfl = (fn.options&PERIOD  )!=0
-    noescape = (fn.options&NOESCAPE)!=0
-    pathname = (fn.options&PATHNAME)!=0
-    extended = (fn.options&EXTENDED)!=0
+    caseless = (fn.options & CASELESS) != 0
+    periodfl = (fn.options & PERIOD  ) != 0
+    noescape = (fn.options & NOESCAPE) != 0
+    pathname = (fn.options & PATHNAME) != 0
+    extended = (fn.options & EXTENDED) != 0
     mi = start(pattern) # current index into pattern
     i = start(s) # current index into s
     starmatch = i
@@ -272,7 +270,7 @@ end
 macro glob_str(pattern) GlobMatch(pattern) end
 macro glob_mstr(pattern) GlobMatch(pattern) end
 
-immutable GlobMatch
+struct GlobMatch
     pattern::Vector
     GlobMatch(pattern) = isempty(pattern) ? error("GlobMatch pattern cannot be an empty vector") : new(pattern)
 end
@@ -283,7 +281,7 @@ function GlobMatch(pattern::AbstractString)
     end
     pat = split(pattern, '/')
     S = eltype(pat)
-    if !isleaftype(S)
+    if !isconcrete(S)
         S = Any
     else
         S = Union{S, FilenameMatch{S}}
@@ -363,7 +361,7 @@ function _glob!(matches, pat::AbstractString)
         end
     end
     resize!(matches, last)
-    matches
+    return matches
 end
 
 function _glob!(matches, pat)
@@ -383,7 +381,7 @@ function _glob!(matches, pat)
             end
         end
     end
-    m2
+    return m2
 end
 
 end # module
