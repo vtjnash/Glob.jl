@@ -1,8 +1,7 @@
-
 language: julia
 julia:
   - nightly
-  - 0.5
+  - 0.6
 os:
   - linux
 notifications:
@@ -10,6 +9,10 @@ notifications:
 before_install:
   - if [[ -a .git/shallow ]]; then git fetch --unshallow; fi
 script:
-  - julia -e 'Pkg.clone(pwd()); Pkg.test("Glob", coverage=true)'
+  - julia -e 'Pkg.clone(pwd());
+              Pkg.test("Glob", coverage=true)'
 after_success:
-  - julia -e 'cd(Pkg.dir("Glob")); Pkg.add("Coverage"); using Coverage; Coveralls.submit(Coveralls.process_folder())'
+  - julia -e 'cd(Pkg.dir("Glob"));
+              Pkg.add("Coverage");
+              using Coverage;
+              Coveralls.submit(Coveralls.process_folder())'
