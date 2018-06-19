@@ -7,6 +7,13 @@ using Compat
 import Base: ismatch, readdir, show
 import Compat: occursin
 
+@static if VERSION < v"0.7.0-DEV.5126"
+    function iterate(s::AbstractString, i::Int=firstindex(s))
+        i > ncodeunits(s) && return nothing
+        return s[i], nextind(s, i)
+    end
+end
+
 export glob, @fn_str, @fn_mstr, @glob_str, @glob_mstr
 
 const CASELESS = 1 << 0 # i -- Do case-insensitive matching
@@ -55,26 +62,26 @@ function occursin(fn::FilenameMatch, s::AbstractString)
     noescape = (fn.options & NOESCAPE) != 0
     pathname = (fn.options & PATHNAME) != 0
     extended = (fn.options & EXTENDED) != 0
-    mi = start(pattern) # current index into pattern
-    i = start(s) # current index into s
+    mi = firstindex(pattern) # current index into pattern
+    i = firstindex(s) # current index into s
     starmatch = i
     star = 0
     period = periodfl
-    while !done(s, i)
-        if done(pattern, mi)
+    while i <= ncodeunits(s)
+        if mi > ncodeunits(pattern)
             match = false # string characters left to match, but no pattern left
         else
-            mc, mi = next(pattern, mi)
+            mc, mi = iterate(pattern, mi)
             if mc == '*'
                 starmatch = i # backup the current search index
                 star = mi
-                c = next(s, i)[1] # peek-ahead
+                c = iterate(s, i)[1] # peek-ahead
                 if period & (c == '.')
                     return false # * does not match leading .
                 end
                 match = true
             else
-                c, i = next(s, i)
+                c, i = iterate(s, i)
                 if mc == '['
                     mi, valid, match = _match(pattern, mi, c, caseless, extended)
                     if pathname & valid & match & (c == '/')
@@ -92,8 +99,8 @@ function occursin(fn::FilenameMatch, s::AbstractString)
                     end
                     match = true
                 else
-                    if (!noescape) & (mc == '\\') & (!done(pattern, mi))
-                        mc, mi = next(pattern, mi)
+                    if (!noescape) & (mc == '\\') & (mi <= ncodeunits(pattern))
+                        mc, mi = iterate(pattern, mi)
                     end
                     match = ((c == mc) || (caseless && uppercase(c)==uppercase(mc)))
                 end
@@ -101,7 +108,7 @@ function occursin(fn::FilenameMatch, s::AbstractString)
         end
         if !match # try to backtrack and add another character to the last *
             star == 0 && return false
-            c, i = next(s, starmatch)
+            c, i = iterate(s, starmatch)
             if pathname & (c == '/')
                 return false # * does not match /
             end
@@ -110,8 +117,8 @@ function occursin(fn::FilenameMatch, s::AbstractString)
         end
         period = (periodfl & pathname & (c == '/'))
     end
-    while !done(pattern, mi) # allow trailing *'s
-        mc, mi = next(pattern, mi)
+    while mi <= ncodeunits(pattern) # allow trailing *'s
+        mc, mi = iterate(pattern, mi)
         if mc != '*'
             return false # pattern characters left to match, but no string left
         end
@@ -131,25 +138,31 @@ filter!(fn::FilenameMatch, d::Dict) = filter!((k,v)->occursin(fn,k),d)
 filter(fn::FilenameMatch, d::Dict) = filter!(fn,copy(d))
 
 function _match_bracket(pat::AbstractString, mc::Char, i, cl::Char, cu::Char) # returns (mc, i, valid, match)
-    if done(pat, i)
+    next = iterate(pat, i)
+    if next === nothing
         return (mc, i, false, false)
     end
-    mc2, j = next(pat, i)
+    mc2, j = next
     if (mc2 != ':') & (mc2 != '.') & (mc2 != '=')
         return (mc, i, false, true)
     end
     mc3 = mc4 = '\0'
     k0 = k1 = k2 = k3 = j
+    next = iterate(pat, k3)
     matchfail = false
     while mc3 != mc2 && mc4 != ']'
-        if done(pat, k3)
+        if next === nothing
             return (mc, i, false, false)
         end
         mc3 = mc4
         k0 = k1
         k1 = k2
         k2 = k3
-        mc4, k3 = next(pat, k3)
+        next = iterate(pat, k3)
+        if next === nothing
+            return (mc, i, false, false)
+        end
+        mc4, k3 = next
     end
     if mc2 == ':'
         phrase = SubString(pat, j, k0)
@@ -188,13 +201,13 @@ function _match_bracket(pat::AbstractString, mc::Char, i, cl::Char, cu::Char) # 
             #match = (pat[j:k0] == s[ci:ci+(k0-j)])
             #return (mc, k3, true, match)
         end
-        mc, j = next(pat, j)
+        mc, j = iterate(pat, j)
         return (mc, k3, false, true)
     else #if mc2 == '='
         if j != k0
             error(string("only single characters are currently supported as character equivalents, got [=", SubString(pat, j, k0), "=]"))
         end
-        mc, j = next(pat, j)
+        mc, j = iterate(pat, j)
         match = (cl==mc) | (cu==mc)
         return (mc, k3, true, match)
     end
@@ -209,10 +222,10 @@ function _match(pat::AbstractString, i0, c::Char, caseless::Bool, extended::Bool
         cl = cu = c
     end
     i = i0
-    if done(pat, i)
+    if i > ncodeunits(pat)
         return (i0, false, c=='[')
     end
-    mc, j = next(pat, i)
+    mc, j = iterate(pat, i)
     negate = false
     if mc == '!'
         negate = true
@@ -220,8 +233,8 @@ function _match(pat::AbstractString, i0, c::Char, caseless::Bool, extended::Bool
     end
     match = false
     notfirst = false
-    while !done(pat,i)
-        mc, i = next(pat, i)
+    while i <= ncodeunits(pat)
+        mc, i = iterate(pat, i)
         if (mc == ']') & notfirst
             return (i, true, match ⊻ negate)
         end
@@ -235,20 +248,20 @@ function _match(pat::AbstractString, i0, c::Char, caseless::Bool, extended::Bool
                 return (i0, false, c=='[')
             end
         elseif extended & (mc == '\\')
-            if done(pat, i)
+            if i > ncodeunits(pat)
                 return (i0, false, c=='[')
             end
-            mc, i = next(pat, i)
+            mc, i = iterate(pat, i)
         end
-        if done(pat, i)
+        if i > ncodeunits(pat)
             return (i0, false, c=='[')
         end
-        mc2, j = next(pat, i)
+        mc2, j = iterate(pat, i)
         if mc2 == '-'
-            if done(pat, j)
+            if j > ncodeunits(pat)
                 return (i0, false, c=='[')
             end
-            mc2, j = next(pat, j)
+            mc2, j = iterate(pat, j)
             if mc2 == ']'
                 match |= ((cl == mc) | (cu == mc) | (c == '-'))
                 return (j, true, match ⊻ negate)
@@ -261,10 +274,10 @@ function _match(pat::AbstractString, i0, c::Char, caseless::Bool, extended::Bool
                     return (i0, false, c=='[')
                 end
             elseif extended & (mc2 == '\\')
-                if done(pat, j)
+                if j > ncodeunits(pat)
                     return (i0, false, c=='[')
                 end
-                mc2, j = next(pat, j)
+                mc2, j = iterate(pat, j)
             end
             match |= (mc <= cl <= mc2)
             match |= (mc <= cu <= mc2)
@@ -299,15 +312,16 @@ function GlobMatch(pattern::AbstractString)
     extended = false
     for i = 1:length(pat)
         p = pat[i]
-        j = start(p)
+        next = iterate(p)
         ispattern = false
-        while !done(p, j)
-            c, j = next(p, j)
+        while next !== nothing
+            c, j = next
+            next = iterate(p, j)
             if extended & (c == '\\')
-                if done(p, j)
+                if next === nothing
                     break
                 end
-                c, j = next(p, j)
+                next = iterate(p, j)
             elseif (c == '*') | (c == '?') |
                     (c == '[' && _match(p, j, '\0', false, extended)[2])
                 ispattern = true
