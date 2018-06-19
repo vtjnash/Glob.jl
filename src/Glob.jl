@@ -2,8 +2,10 @@ __precompile__()
 
 module Glob
 
-import Base: ismatch, match, readdir, show
-isdefined(Base, :isconcrete) || (const isconcrete = Base.isleaftype) # Compat for v0.7
+using Compat
+
+import Base: ismatch, readdir, show
+import Compat: occursin
 
 export glob, @fn_str, @fn_mstr, @glob_str, @glob_mstr
 
@@ -46,7 +48,7 @@ function show(io::IO, fn::FilenameMatch)
     nothing
 end
 
-function ismatch(fn::FilenameMatch, s::AbstractString)
+function occursin(fn::FilenameMatch, s::AbstractString)
     pattern = fn.pattern
     caseless = (fn.options & CASELESS) != 0
     periodfl = (fn.options & PERIOD  ) != 0
@@ -116,9 +118,16 @@ function ismatch(fn::FilenameMatch, s::AbstractString)
     end
     return true
 end
-filter!(fn::FilenameMatch, v) = filter!(x->ismatch(fn,x), v)
-filter(fn::FilenameMatch, v)  = filter(x->ismatch(fn,x), v)
-filter!(fn::FilenameMatch, d::Dict) = filter!((k,v)->ismatch(fn,k),d)
+
+@static if VERSION < v"0.7.0-DEV.4637"
+    Base.ismatch(fn::FilenameMatch, s::AbstractString) = occursin(fn, s)
+else
+    @deprecate ismatch(fn::FilenameMatch, s::AbstractString) occursin(fn, s)
+end
+
+filter!(fn::FilenameMatch, v) = filter!(x->occursin(fn,x), v)
+filter(fn::FilenameMatch, v)  = filter(x->occursin(fn,x), v)
+filter!(fn::FilenameMatch, d::Dict) = filter!((k,v)->occursin(fn,k),d)
 filter(fn::FilenameMatch, d::Dict) = filter!(fn,copy(d))
 
 function _match_bracket(pat::AbstractString, mc::Char, i, cl::Char, cu::Char) # returns (mc, i, valid, match)
@@ -146,9 +155,9 @@ function _match_bracket(pat::AbstractString, mc::Char, i, cl::Char, cu::Char) # 
         phrase = SubString(pat, j, k0)
         match = (
             if phrase == "alnum"
-                isalnum(cl)
+                isletter(cl) || isnumeric(cl)
             elseif phrase == "alpha"
-                isalpha(cl)
+                isletter(cl)
             elseif phrase == "blank"
                 (cl == ' ' || cl == '\t')
             elseif phrase == "cntrl"
@@ -156,9 +165,9 @@ function _match_bracket(pat::AbstractString, mc::Char, i, cl::Char, cu::Char) # 
             elseif phrase == "digit"
                 isdigit(cl)
             elseif phrase == "graph"
-                isgraph(cl)
+                isprint(cl) && !isspace(cl)
             elseif phrase == "lower"
-                islower(cl) | islower(cu)
+                islowercase(cl) | islowercase(cu)
             elseif phrase == "print"
                 isprint(cl)
             elseif phrase == "punct"
@@ -166,7 +175,7 @@ function _match_bracket(pat::AbstractString, mc::Char, i, cl::Char, cu::Char) # 
             elseif phrase == "space"
                 isspace(cl)
             elseif phrase == "upper"
-                isupper(cl) | isupper(cu)
+                isuppercase(cl) | isuppercase(cu)
             elseif phrase == "xdigit"
                 isxdigit(cl)
             else
@@ -281,12 +290,12 @@ function GlobMatch(pattern::AbstractString)
     end
     pat = split(pattern, '/')
     S = eltype(pat)
-    if !isconcrete(S)
+    if !isconcretetype(S)
         S = Any
     else
         S = Union{S, FilenameMatch{S}}
     end
-    glob = Array{S}(length(pat))
+    glob = Array{S}(undef, length(pat))
     extended = false
     for i = 1:length(pat)
         p = pat[i]
@@ -369,13 +378,13 @@ function _glob!(matches, pat)
     for m in matches
         if isempty(m)
             for d in readdir()
-                if ismatch(pat, d)
+                if occursin(pat, d)
                     push!(m2, d)
                 end
             end
         elseif isdir(m)
             for d in readdir(m)
-                if ismatch(pat, d)
+                if occursin(pat, d)
                     push!(m2, joinpath(m, d))
                 end
             end
