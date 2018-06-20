@@ -23,7 +23,7 @@ Glob is implemented to have both a functional form and an object-oriented form. 
 
             "a/?/c" # equivalent to 1, above
 
-    3. A vector of strings and/or objects which implement `ismatch`, including `Regex` and `Glob.FilenameMatch` objects
+    3. A vector of strings and/or objects which implement `occursin`, including `Regex` and `Glob.FilenameMatch` objects
 
             ["a", r".", fn"c"] # again, equivalent to 1, above
 
@@ -41,7 +41,7 @@ Glob is implemented to have both a functional form and an object-oriented form. 
   * Returns a `Glob.GlobMatch` object, which can be used with `glob()` or `readdir()`. See above descriptions.
 
 * `fn"pattern"ipedx` ::
-  * Returns a `Glob.FilenameMatch` object, which can be used with `ismatch()`. Available flags are:
+  * Returns a `Glob.FilenameMatch` object, which can be used with `ismatch()` or `occursin()`. Available flags are:
     * `i` = `CASELESS` : Performs case-insensitive matching
     * `p` = `PERIOD` : A leading period (`.`) character must be exactly matched by a period (`.`) character (not a `?`, `*`, or `[]`). A leading period is a period at the beginning of a string, or a period after a slash if PATHNAME is true.
     * `e` = `NOESCAPE` : Do not treat backslash (`\`) as a special character (in extended mode, this only outside of `[]`)
