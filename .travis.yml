@@ -1,7 +1,7 @@
 language: julia
 julia:
   - nightly
-  - 0.6
+  - 1.0
 os:
   - linux
 branches:
