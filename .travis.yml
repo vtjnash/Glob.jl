@@ -13,9 +13,6 @@ git:
   depth: 99999999
 before_install:
   - if [[ -a .git/shallow ]]; then git fetch --unshallow; fi
-script:
-  - julia -e 'Pkg.clone(pwd());
-              Pkg.test("Glob", coverage=true)'
 after_success:
   - julia -e 'cd(Pkg.dir("Glob"));
               Pkg.add("Coverage");
