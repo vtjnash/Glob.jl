@@ -2,10 +2,7 @@ __precompile__()
 
 module Glob
 
-using Compat
-
-import Base: ismatch, readdir, show
-import Compat: occursin
+import Base: ismatch, readdir, show, occursin
 
 @static if VERSION < v"0.7.0-DEV.5126"
     function iterate(s::AbstractString, i::Int=firstindex(s))

@@ -1,6 +1,5 @@
 using Glob
-using Compat
-using Compat.Test
+using Test
 
 macro test_types(arr, types)
     return quote
