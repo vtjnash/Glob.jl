@@ -9,10 +9,6 @@ branches:
     - master
 notifications:
   email: false
-git:
-  depth: 99999999
-before_install:
-  - if [[ -a .git/shallow ]]; then git fetch --unshallow; fi
 after_success:
   - julia -e 'using Pkg;
               import Glob;
