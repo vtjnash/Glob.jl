@@ -14,7 +14,9 @@ git:
 before_install:
   - if [[ -a .git/shallow ]]; then git fetch --unshallow; fi
 after_success:
-  - julia -e 'cd(Pkg.dir("Glob"));
+  - julia -e 'using Pkg;
+              import Glob;
+              cd(dirname(dirname(pathof(Glob))));
               Pkg.add("Coverage");
               using Coverage;
               Coveralls.submit(Coveralls.process_folder())'
