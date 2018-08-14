@@ -1,7 +1,7 @@
 language: julia
 julia:
   - nightly
-  - 0.6
+  - 1.0
 os:
   - linux
 branches:
@@ -9,15 +9,8 @@ branches:
     - master
 notifications:
   email: false
-git:
-  depth: 99999999
-before_install:
-  - if [[ -a .git/shallow ]]; then git fetch --unshallow; fi
-script:
-  - julia -e 'Pkg.clone(pwd());
-              Pkg.test("Glob", coverage=true)'
 after_success:
-  - julia -e 'cd(Pkg.dir("Glob"));
+  - julia -e 'using Pkg;
               Pkg.add("Coverage");
               using Coverage;
               Coveralls.submit(Coveralls.process_folder())'

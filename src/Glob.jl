@@ -2,17 +2,7 @@ __precompile__()
 
 module Glob
 
-using Compat
-
-import Base: ismatch, readdir, show
-import Compat: occursin
-
-@static if VERSION < v"0.7.0-DEV.5126"
-    function iterate(s::AbstractString, i::Int=firstindex(s))
-        i > ncodeunits(s) && return nothing
-        return s[i], nextind(s, i)
-    end
-end
+import Base: readdir, show, occursin
 
 export glob, @fn_str, @fn_mstr, @glob_str, @glob_mstr
 
@@ -132,19 +122,11 @@ function occursin(fn::FilenameMatch, s::AbstractString)
     return true
 end
 
-@static if VERSION < v"0.7.0-DEV.4637"
-    Base.ismatch(fn::FilenameMatch, s::AbstractString) = occursin(fn, s)
-else
-    @deprecate ismatch(fn::FilenameMatch, s::AbstractString) occursin(fn, s)
-end
+@deprecate ismatch(fn::FilenameMatch, s::AbstractString) occursin(fn, s)
 
 filter!(fn::FilenameMatch, v) = filter!(x -> occursin(fn, x), v)
 filter(fn::FilenameMatch, v)  = filter(x -> occursin(fn, x), v)
-@static if VERSION < v"0.7.0-DEV.1378"
-    filter!(fn::FilenameMatch, d::Dict) = filter!((k, v) -> occursin(fn, k), d)
-else
-    filter!(fn::FilenameMatch, d::Dict) = filter!(((k, v),) -> occursin(fn, k), d)
-end
+filter!(fn::FilenameMatch, d::Dict) = filter!(((k, v),) -> occursin(fn, k), d)
 filter(fn::FilenameMatch, d::Dict) = filter!(fn, copy(d))
 
 function _match_bracket(pat::AbstractString, mc::Char, i, cl::Char, cu::Char) # returns (mc, i, valid, match)

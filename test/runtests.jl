@@ -1,6 +1,5 @@
 using Glob
-using Compat
-using Compat.Test
+using Test
 
 macro test_types(arr, types)
     return quote
@@ -182,11 +181,7 @@ end
 @test all([!startswith(x,'.') for x in Glob.glob("*.*")])
 
 function test_string(x1)
-    @static if VERSION < v"0.7.0-DEV.2437"
-        x2 = string(eval(parse(x1)))
-    else
-        x2 = string(eval(Meta.parse(x1)))
-    end
+    x2 = string(eval(Meta.parse(x1)))
     x1 == x2 ? nothing : error(string(
         "string test failed:",
         "\noriginal: ", x1,
