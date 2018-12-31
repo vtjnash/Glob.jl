@@ -362,7 +362,7 @@ end
 readdir(pattern::GlobMatch, prefix::AbstractString="") = glob(pattern, prefix)
 
 function glob(pattern, prefix::AbstractString="")
-    matches = String[prefix]
+    matches = [prefix]
     for pat in GlobMatch(pattern).pattern
         matches = _glob!(matches, pat)
     end
@@ -387,7 +387,7 @@ function _glob!(matches, pat::AbstractString)
 end
 
 function _glob!(matches, pat)
-    m2 = String[]
+    m2 = eltype(matches)[]
     for m in matches
         if isempty(m)
             for d in readdir()
