@@ -56,6 +56,7 @@ function occursin(fn::FilenameMatch, s::AbstractString)
     i = firstindex(s) # current index into s
     starmatch = i
     star = 0
+    is_starstar = false # If current star is a double star
     period = periodfl
     while true
         matchnext = iterate(s, i)
@@ -66,6 +67,9 @@ function occursin(fn::FilenameMatch, s::AbstractString)
         else
             mc, mi = patnext
             if mc == '*'
+                # Detect globstar, only in extended mode, two stars in a row
+                is_starstar = extended && star > 0 && star==mi-1
+
                 starmatch = i # backup the current search index
                 star = mi
                 c, _ = matchnext # peek-ahead
@@ -105,7 +109,7 @@ function occursin(fn::FilenameMatch, s::AbstractString)
         if !match # try to backtrack and add another character to the last *
             star == 0 && return false
             c, i = something(iterate(s, starmatch)) # starmatch is strictly <= i, so it is known that it must be a valid index
-            if pathname & (c == '/')
+            if !is_starstar && pathname & (c == '/')
                 return false # * does not match /
             end
             mi = star

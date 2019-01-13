@@ -164,6 +164,26 @@ end
 @test occursin(fn"\?"e, "\\!")
 @test !occursin(fn"\?"e, "?")
 
+@testset "GlobStar" begin
+    @test occursin(fn"A/**"pdx, "A/b")
+    @test occursin(fn"A/**"pdx, "A/b/c")
+    @test !occursin(fn"A/**"pdx, "B/b")
+    @test !occursin(fn"A/**"pdx, "B/b/c")
+
+    @test occursin(fn"A/**c"pdx, "A/c")
+    @test occursin(fn"A/**c"pdx, "A/b/c")
+    @test occursin(fn"A/**c"pdx, "A/bc")
+    @test occursin(fn"A/**c"pdx, "A/x/bc")
+    @test occursin(fn"A/**c"pdx, "A/x/y/bc")
+
+    @test !occursin(fn"A/**/c"pdx, "A/c")
+    @test occursin(fn"A/**/c"pdx, "A/b/c")
+    @test !occursin(fn"A/**/c"pdx, "A/bc")
+    @test !occursin(fn"A/**/c"pdx, "A/x/bc")
+    @test !occursin(fn"A/**/c"pdx, "A/x/y/bc")
+end
+
+
 @test_types glob"ab/?/d".pattern (AbstractString, Glob.FilenameMatch, AbstractString)
 @test_types glob"""ab/*/d""".pattern (AbstractString, Glob.FilenameMatch, AbstractString)
 @test length(glob"ab/[/d".pattern) == 3
