@@ -1,7 +1,10 @@
 # Glob
 
-[![Build Status](https://travis-ci.org/vtjnash/Glob.jl.svg?branch=master)](https://travis-ci.org/vtjnash/Glob.jl)
-[![Coverage Status](https://coveralls.io/repos/vtjnash/Glob.jl/badge.png)](https://coveralls.io/r/vtjnash/Glob.jl)
+[![Build Status](https://github.com/vtjnash/Glob.jl/workflows/CI/badge.svg)](https://github.com/vtjnash/Glob.jl/actions/workflows/CI.yml?query=branch%3Amaster)
+[![coveralls](https://coveralls.io/repos/github/vtjnash/Glob.jl/badge.svg?label=coveralls)](https://coveralls.io/github/vtjnash/Glob.jl)
+[![codecov](https://codecov.io/gh/vtjnash/Glob.jl/branch/master/graph/badge.svg?label=codecov&token=QDfy4Cs9FB)](https://codecov.io/gh/vtjnash/Glob.jl)
+
+
 
 This implementation of Glob is based on the IEEE Std 1003.1, 2004 Edition (Open Group Base Specifications Issue 6) for fnmatch and glob. The specification of which can be found online: [fnmatch](http://pubs.opengroup.org/onlinepubs/009696899/functions/fnmatch.html) and [glob](http://pubs.opengroup.org/onlinepubs/009696899/functions/glob.html).
 
