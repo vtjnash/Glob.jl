@@ -301,6 +301,7 @@ Relative globs are based on `pwd()`.
 macro g_str(pattern) :(do_g($(esc(Meta.parse("\"$(escape_string(pattern))\""))))) end
 
 function do_g(pattern)
+    isempty(pattern) && throw(ErrorException("Glob strings cannot be empty"))
     pattern == "/" && return Cmd(["/"])
     dir = pwd()
     if pattern[1] == '/'
