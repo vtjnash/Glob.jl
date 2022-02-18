@@ -32,6 +32,18 @@ function FilenameMatch(pattern::AbstractString, flags::AbstractString)
     end
     return FilenameMatch(pattern, options)
 end
+"""
+    fn"pattern"ipedx
+
+Returns a `Glob.FilenameMatch` object, which can be used with `ismatch()` or `occursin()`. Available flags are:
+
+* `i` = `CASELESS` : Performs case-insensitive matching
+* `p` = `PERIOD` : A leading period (`.`) character must be exactly matched by a period (`.`) character (not a `?`, `*`, or `[]`). A leading period is a period at the beginning of a string, or a period after a slash if PATHNAME is true.
+* `e` = `NOESCAPE` : Do not treat backslash (`\`) as a special character (in extended mode, this only outside of `[]`)
+* `d` = `PATHNAME` : A slash (`/`) character must be exactly matched by a slash (`/`) character (not a `?`, `*`, or `[]`)
+* `x` = `EXTENDED` : Additional features borrowed from newer shells, such as `bash` and `tcsh`
+    * Backslash (`\`) characters in `[]` groups escape the next character
+"""
 macro fn_str(pattern, flags...) FilenameMatch(pattern, flags...) end
 macro fn_mstr(pattern, flags...) FilenameMatch(pattern, flags...) end
 
@@ -288,6 +300,11 @@ function _match(pat::AbstractString, i0, c::Char, caseless::Bool, extended::Bool
     return (i0, false, c=='[')
 end
 
+"""
+    glob"pattern"
+
+Returns a `Glob.GlobMatch` object, which can be used with `glob()` or `readdir()`.
+"""
 macro glob_str(pattern) GlobMatch(pattern) end
 macro glob_mstr(pattern) GlobMatch(pattern) end
 
@@ -359,8 +376,39 @@ function show(io::IO, gm::GlobMatch)
     print(io, '"')
 end
 
+"""
+    readdir(pattern::GlobMatch, [directory::AbstractString])
+
+Alias for [`glob()`](@ref).
+"""
 readdir(pattern::GlobMatch, prefix::AbstractString="") = glob(pattern, prefix)
 
+"""
+    glob(pattern, [directory::AbstractString])
+
+Returns a list of all files matching `pattern` in `directory`.
+
+* If directory is not specified, it defaults to the current working directory.
+* Pattern can be any of:
+    1. A `Glob.GlobMatch` object:
+
+            glob"a/?/c"
+
+    2. A string, which will be converted into a GlobMatch expression:
+
+            "a/?/c" # equivalent to 1, above
+
+    3. A vector of strings and/or objects which implement `occursin`, including `Regex` and `Glob.FilenameMatch` objects
+
+            ["a", r".", fn"c"] # again, equivalent to 1, above
+
+        * Each element of the vector will be used to match another level in the file hierarchy
+        * no conversion of strings to `Glob.FilenameMatch` objects or directory splitting on `/` will occur.
+
+A trailing `/` (or equivalently, a trailing empty string in the vector) will cause glob to only match directories.
+
+Attempting to use a pattern with a leading `/` or the empty string is an error; use the `directory` argument to specify the absolute path to the directory in such a case.
+"""
 function glob(pattern, prefix::AbstractString="")
     matches = String[prefix]
     for pat in GlobMatch(pattern).pattern
