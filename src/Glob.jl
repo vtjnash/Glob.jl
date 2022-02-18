@@ -303,7 +303,7 @@ end
 """
     glob"pattern"
 
-Returns a `Glob.GlobMatch` object, which can be used with `glob()` or `readdir()`. See above descriptions.
+Returns a `Glob.GlobMatch` object, which can be used with `glob()` or `readdir()`.
 """
 macro glob_str(pattern) GlobMatch(pattern) end
 macro glob_mstr(pattern) GlobMatch(pattern) end
