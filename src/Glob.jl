@@ -64,6 +64,9 @@ function occursin(fn::FilenameMatch, s::AbstractString)
     noescape = (fn.options & NOESCAPE) != 0
     pathname = (fn.options & PATHNAME) != 0
     extended = (fn.options & EXTENDED) != 0
+
+    pathname && endswith(pattern, "**") && (pattern *= "/*")
+    
     mi = firstindex(pattern) # current index into pattern
     i = firstindex(s) # current index into s
     starmatch = i

@@ -196,6 +196,17 @@ end
 @test !occursin(fn"/**/*.png"d, "a/c.png")
 @test !occursin(fn"/**/*.png"d, "a/b/c.png")
 
+@test occursin(fn"**.png"d, "c.png")
+@test !occursin(fn"**.png"d, "a/b/c.png")
+
+@test occursin(fn"**"d, "c.png")
+@test occursin(fn"**"d, "a/c.png")
+@test occursin(fn"**"d, "/a/c.png")
+@test occursin(fn"/**"d, "/a/c.png")
+@test occursin(fn"/a/**"d, "/a/c.png")
+@test !occursin(fn"/b/**"d, "/a/c.png")
+@test !occursin(fn"/**"d, "a/c.png")
+
 function test_string(x1)
     x2 = string(eval(Meta.parse(x1)))
     x1 == x2 ? nothing : error(string(
