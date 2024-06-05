@@ -69,6 +69,7 @@ function occursin(fn::FilenameMatch, s::AbstractString)
     starmatch = i
     star = 0
     period = periodfl
+    globstar = false
     while true
         matchnext = iterate(s, i)
         matchnext === nothing && break
@@ -79,6 +80,11 @@ function occursin(fn::FilenameMatch, s::AbstractString)
             mc, mi = patnext
             if mc == '*'
                 starmatch = i # backup the current search index
+                # support "**/" to match zero or more directories if pathname is true
+                if pathname && length(pattern) > mi && pattern[mi:nextind(pattern, mi)] == "*/"
+                    mi += 2
+                    globstar = true
+                end
                 star = mi
                 c, _ = matchnext # peek-ahead
                 if period & (c == '.')
@@ -117,7 +123,7 @@ function occursin(fn::FilenameMatch, s::AbstractString)
         if !match # try to backtrack and add another character to the last *
             star == 0 && return false
             c, i = something(iterate(s, starmatch)) # starmatch is strictly <= i, so it is known that it must be a valid index
-            if pathname & (c == '/')
+            if pathname & (c == '/') & ! globstar
                 return false # * does not match /
             end
             mi = star
