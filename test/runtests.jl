@@ -180,6 +180,22 @@ end
 @test glob([".", r".*"]) == map(x->joinpath(".",x), readdir())
 @test all([!startswith(x,'.') for x in Glob.glob("*.*")])
 
+@test occursin(fn"**/*.png"d, "c.png")
+@test occursin(fn"**/*.png"d, "a/c.png")
+@test occursin(fn"**/*.png"d, "a/b/c.png")
+
+@test occursin(fn"/**/*.png"d, "/c.png")
+@test occursin(fn"/**/*.png"d, "/a/c.png")
+@test occursin(fn"/**/*.png"d, "/a/b/c.png")
+
+@test occursin(fn"**/*.png"d, "/c.png")
+@test occursin(fn"**/*.png"d, "/a/c.png")
+@test occursin(fn"**/*.png"d, "/a/b/c.png")
+
+@test !occursin(fn"/**/*.png"d, "c.png")
+@test !occursin(fn"/**/*.png"d, "a/c.png")
+@test !occursin(fn"/**/*.png"d, "a/b/c.png")
+
 function test_string(x1)
     x2 = string(eval(Meta.parse(x1)))
     x1 == x2 ? nothing : error(string(
