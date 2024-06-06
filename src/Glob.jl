@@ -451,8 +451,11 @@ Returns a list of all files matching `pattern` in `directory`.
         `glob"**"`
 
         * `glob(glob"<...>")`` requires exact matching of leading periods and supports globstar (**) matching
+        
+        Currently no options other than `rootdir` are supported for `Glob.GlobMatch` objects.
 
 * If `relative` is `true`, the returned paths will be relative to `rootdir`.
+* If `filesonly` is `true`, only files will be returned.
 * If `topdown` is `true`, the returned paths will be in top-down order.
 * If `follow_symlinks` is `true`, symbolic links will be followed.
 * `onerror` is a call back function, that will be called in case of an error.
@@ -463,6 +466,7 @@ Attempting to use a pattern with a leading `/` or the empty string is an error; 
 """
 function glob(fn::FilenameMatch, rootdir::AbstractString = "";
     relative::Union{Bool, Nothing} = nothing,
+    filesonly::Bool = false,
     topdown::Bool = true,
     follow_symlinks::Bool = true,
     onerror::Union{Function, Nothing} = nothing
@@ -470,13 +474,22 @@ function glob(fn::FilenameMatch, rootdir::AbstractString = "";
     if isempty(fn.pattern) || first(fn.pattern) == '/'
         error("Glob pattern cannot be empty or start with a '/' character")
     end
+   
+    dirmode = endswith(fn.pattern, '/')
+    dirmode && filesonly && return String[]
+    dirmode && (fn = FilenameMatch(fn.pattern[1:end-1], fn.options))
 
     relative === nothing && (relative = isempty(rootdir))
     isempty(rootdir) && (rootdir = pwd())
 
     matches = String[]
     for (root, dirs, files) in walkdir(rootdir; topdown, follow_symlinks, onerror)
-        for file in files
+        if !dirmode & !filesonly
+            index = [isempty(readdir(joinpath(root, x))) for x in dirs]
+            dirs = dirs[index]
+            files = isempty(dirs) ? files : sort(vcat(dirs, files), rev = !topdown)
+        end
+        for file in (dirmode ? dirs : files)
             file = joinpath(root, file)
             relfile = relpath(file, rootdir)
             relpattern = Sys.iswindows() ? replace(relfile, '\\' => '/') : relfile
@@ -489,6 +502,7 @@ end
 
 function glob(s::AbstractString, rootdir::AbstractString = "";
     relative::Union{Bool, Nothing} = nothing,
+    filesonly::Bool = false,
     topdown::Bool = true,
     follow_symlinks::Bool = true,
     onerror::Union{Function, Nothing} = nothing
@@ -499,6 +513,7 @@ end
 
 function glob(g::GlobMatch, rootdir::AbstractString = "";
     relative::Union{Bool, Nothing} = nothing,
+    filesonly::Bool = false,
     topdown::Bool = true,
     follow_symlinks::Bool = true,
     onerror::Union{Function, Nothing} = nothing
