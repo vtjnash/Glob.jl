@@ -40,7 +40,7 @@ Returns a `Glob.FilenameMatch` object, which can be used with `ismatch()` or `oc
 * `i` = `CASELESS` : Performs case-insensitive matching
 * `p` = `PERIOD` : A leading period (`.`) character must be exactly matched by a period (`.`) character (not a `?`, `*`, or `[]`). A leading period is a period at the beginning of a string, or a period after a slash if PATHNAME is true.
 * `e` = `NOESCAPE` : Do not treat backslash (`\`) as a special character (in extended mode, this only outside of `[]`)
-* `d` = `PATHNAME` : A slash (`/`) character must be exactly matched by a slash (`/`) character (not a `?`, `*`, or `[]`)
+* `d` = `PATHNAME` : A slash (`/`) character must be exactly matched by a slash (`/`) character (not a `?`, `*`, or `[]`), "**/" matches yero or more directories (globstar)
 * `x` = `EXTENDED` : Additional features borrowed from newer shells, such as `bash` and `tcsh`
     * Backslash (`\`) characters in `[]` groups escape the next character
 """
@@ -65,82 +65,115 @@ function occursin(fn::FilenameMatch, s::AbstractString)
     pathname = (fn.options & PATHNAME) != 0
     extended = (fn.options & EXTENDED) != 0
 
+    # if pattern ends with "**", append "/*" to allow matching of all files
     pathname && endswith(pattern, "**") && (pattern *= "/*")
-    
+
     mi = firstindex(pattern) # current index into pattern
     i = firstindex(s) # current index into s
     starmatch = i
-    star = 0
+    
+    # globstar_index = 1
+    globstar_mi = Int[]
+    globstarmatch = Int[]
+    globstar = 0
     period = periodfl
-    globstar = false
+    globstar_period = false
     while true
-        matchnext = iterate(s, i)
-        matchnext === nothing && break
-        patnext = iterate(pattern, mi)
-        if patnext === nothing
-            match = false # string characters left to match, but no pattern left
-        else
-            mc, mi = patnext
-            if mc == '*'
-                starmatch = i # backup the current search index
-                # support "**/" to match zero or more directories if pathname is true
-                if pathname && length(pattern) > mi && pattern[mi:nextind(pattern, mi)] == "*/"
-                    mi += 2
-                    globstar = true
-                end
-                star = mi
-                c, _ = matchnext # peek-ahead
-                if period & (c == '.')
-                    return false # * does not match leading .
-                end
-                match = true
+        star = 0
+        match_fails = false
+        isempty(globstar_mi) ||(mi = globstar_mi[end]) # reset pattern index of the latest globstar pattern, if it exists
+        while true
+            matchnext = iterate(s, i)
+            matchnext === nothing && break
+            patnext = iterate(pattern, mi)
+            if patnext === nothing
+                match = false # string characters left to match, but no pattern left
             else
-                c, i = matchnext
-                if mc == '['
-                    mi, valid, match = _match(pattern, mi, c, caseless, extended)
-                    if pathname & valid & match & (c == '/')
-                        match = false
-                    end
-                    if period & valid & match & (c == '.')
-                        match = false
-                    end
-                elseif mc == '?'
-                    if pathname & (c == '/')
-                        return false # ? does not match /
-                    end
+                mc, mi = patnext
+                if mc == '*' && pathname && length(pattern) > mi && pattern[mi:nextind(pattern, mi)] == "*/"
+                    star = 0
+                    mi += 2
+                    push!(globstarmatch, i)
+                    push!(globstar_mi, mi)
+                    c = '/' # fake previous character to indicate end of directory
+                    match = true
+                elseif mc == '*'
+                    starmatch = i # backup the current search index
+                    star = mi
+                    c, _ = matchnext # peek-ahead
                     if period & (c == '.')
-                        return false # ? does not match leading .
+                        (match_fails = true) && break
                     end
                     match = true
                 else
-                    if (!noescape) & (mc == '\\') # escape the next character after backslash, unless it is the last character
-                        patnext = iterate(pattern, mi)
-                        if patnext !== nothing
-                            mc, mi = patnext
+                    c, i = matchnext
+                    if mc == '['
+                        mi, valid, match = _match(pattern, mi, c, caseless, extended)
+                        if pathname & valid & match & (c == '/')
+                            match = false
                         end
+                        if period & valid & match & (c == '.')
+                            match = false
+                        end
+                    elseif mc == '?'
+                        if pathname & (c == '/')
+                            (match_fails = true) && break
+                        end
+                        if period & (c == '.')
+                            # match = false
+                            (match_fails = true) && break
+                        end
+                        match = true
+                    else
+                        if (!noescape) & (mc == '\\') # escape the next character after backslash, unless it is the last character
+                            patnext = iterate(pattern, mi)
+                            if patnext !== nothing
+                                mc, mi = patnext
+                            end
+                        end
+                        match = ((c == mc) || (caseless && uppercase(c)==uppercase(mc)))
                     end
-                    match = ((c == mc) || (caseless && uppercase(c)==uppercase(mc)))
                 end
             end
-        end
-        if !match # try to backtrack and add another character to the last *
-            star == 0 && return false
-            c, i = something(iterate(s, starmatch)) # starmatch is strictly <= i, so it is known that it must be a valid index
-            if pathname & (c == '/') & ! globstar
-                return false # * does not match /
+            if !match # try to backtrack and add another character to the last *
+                (star == 0) && (match_fails = true) && break
+                c, i = something(iterate(s, starmatch)) # starmatch is strictly <= i, so it is known that it must be a valid index
+                if pathname & (c == '/')
+                    (match_fails = true) && break # return false # * does not match /
+                end
+                mi = star
+                starmatch = i
             end
-            mi = star
-            starmatch = i
+            period = (periodfl & pathname & (c == '/'))
+            globstar_period = period && !isempty(globstarmatch)
         end
-        period = (periodfl & pathname & (c == '/'))
+        while true # allow trailing *'s
+            patnext = iterate(pattern, mi)
+            patnext === nothing && break
+            mc, mi = patnext
+            if mc != '*'
+                # pattern characters left to match, but no string left
+                match_fails = true
+            end
+        end
+        if match_fails
+            # if in a globstar move to next directory, otherwise return false
+            if !isempty(globstarmatch)
+                x = findnext('/', s, globstarmatch[end])
+                if x === nothing || globstar_period
+                    pop!(globstarmatch)
+                    pop!(globstar_mi)
+                    globstar_period = false
+                else
+                    globstarmatch[end] = i = x + 1
+                    period = periodfl
+                end
+            end
+            isempty(globstarmatch) && return false
+        else
+            return true
+        end
     end
-    while true # allow trailing *'s
-        patnext = iterate(pattern, mi)
-        patnext === nothing && break
-        mc, mi = patnext
-        mc == '*' || return false # pattern characters left to match, but no string left
-    end
-    return true
 end
 
 @deprecate ismatch(fn::FilenameMatch, s::AbstractString) occursin(fn, s)
@@ -386,40 +419,107 @@ function show(io::IO, gm::GlobMatch)
 end
 
 """
-    readdir(pattern::GlobMatch, [directory::AbstractString])
-
-Alias for [`glob()`](@ref).
-"""
-readdir(pattern::GlobMatch, prefix::AbstractString="") = glob(pattern, prefix)
-
-"""
-    glob(pattern, [directory::AbstractString])
+    glob(pattern, rootdir = "";
+        relative::Union{Bool, Nothing} = nothing,
+        topdown::Bool = true,
+        follow_symlinks::Bool = true,
+        onerror::Union{Function, Nothing} = nothing
+    )
 
 Returns a list of all files matching `pattern` in `directory`.
 
-* If directory is not specified, it defaults to the current working directory.
+* If rootdir is not specified, it defaults to the current working directory.
 * Pattern can be any of:
-    1. A `Glob.GlobMatch` object:
+    1. A `Glob.FilenameMatch` object:
 
-            glob"a/?/c"
+        `fn"a/?/c"dp`
 
-    2. A string, which will be converted into a GlobMatch expression:
+    2. A string, which will be converted into a FilenameMatch expression:
 
-            "a/?/c" # equivalent to 1, above
+        `"a/?/c" # equivalent to 1, above`
 
     3. A vector of strings and/or objects which implement `occursin`, including `Regex` and `Glob.FilenameMatch` objects
 
-            ["a", r".", fn"c"] # again, equivalent to 1, above
+        `["a", r".", fn"c"] # almost equivalent to 1, above` but matching also files with leading '.' characters`
 
         * Each element of the vector will be used to match another level in the file hierarchy
         * no conversion of strings to `Glob.FilenameMatch` objects or directory splitting on `/` will occur.
 
+    4. A `Glob.GlobMatch` object:
+
+        ´glob"a/?/c/*/**/*.png"`
+        `glob"**"`
+
+        * `glob(glob"<...>")`` requires exact matching of leading periods and supports globstar (**) matching
+
+* If `relative` is `true`, the returned paths will be relative to `rootdir`.
+* If `topdown` is `true`, the returned paths will be in top-down order.
+* If `follow_symlinks` is `true`, symbolic links will be followed.
+* `onerror` is a call back function, that will be called in case of an error.
+
 A trailing `/` (or equivalently, a trailing empty string in the vector) will cause glob to only match directories.
 
-Attempting to use a pattern with a leading `/` or the empty string is an error; use the `directory` argument to specify the absolute path to the directory in such a case.
+Attempting to use a pattern with a leading `/` or the empty string is an error; use the `rootdir` argument to specify the absolute path to the directory in such a case.
 """
-function glob(pattern, prefix::AbstractString="")
-    matches = String[prefix]
+function glob(fn::FilenameMatch, rootdir::AbstractString = "";
+    relative::Union{Bool, Nothing} = nothing,
+    topdown::Bool = true,
+    follow_symlinks::Bool = true,
+    onerror::Union{Function, Nothing} = nothing
+)
+    if isempty(fn.pattern) || first(fn.pattern) == '/'
+        error("Glob pattern cannot be empty or start with a '/' character")
+    end
+
+    relative === nothing && (relative = isempty(rootdir))
+    isempty(rootdir) && (rootdir = pwd())
+
+    matches = String[]
+    for (root, dirs, files) in walkdir(rootdir; topdown, follow_symlinks, onerror)
+        for file in files
+            file = joinpath(root, file)
+            relfile = relpath(file, rootdir)
+            relpattern = Sys.iswindows() ? replace(relfile, '\\' => '/') : relfile
+           
+            occursin(fn, relpattern) && push!(matches, relative ? relfile : file)
+        end
+    end
+    matches
+end
+
+function glob(s::AbstractString, rootdir::AbstractString = "";
+    relative::Union{Bool, Nothing} = nothing,
+    topdown::Bool = true,
+    follow_symlinks::Bool = true,
+    onerror::Union{Function, Nothing} = nothing
+)
+    fn = FilenameMatch(s, PATHNAME | PERIOD)
+    glob(fn, rootdir; relative, topdown, follow_symlinks, onerror)
+end
+
+function glob(g::GlobMatch, rootdir::AbstractString = "";
+    relative::Union{Bool, Nothing} = nothing,
+    topdown::Bool = true,
+    follow_symlinks::Bool = true,
+    onerror::Union{Function, Nothing} = nothing
+)
+    any(isa.(g.pattern, Regex)) && return _glob(g, rootdir)
+
+    fn = FilenameMatch(join([fn isa AbstractString ? fn : fn.pattern for fn in g.pattern], "/"), PATHNAME)
+    glob(fn, rootdir; relative, topdown, follow_symlinks, onerror)
+end
+
+glob(pattern, rootdir::AbstractString="") = _glob(pattern, rootdir)
+
+"""
+    readdir(pattern::GlobMatch, [directory::AbstractString])
+
+Alias for [`glob()`](@ref).
+"""
+readdir(pattern::GlobMatch, rootdir::AbstractString="") = glob(pattern, rootdir)
+
+function _glob(pattern, rootdir::AbstractString="")
+    matches = String[rootdir]
     for pat in GlobMatch(pattern).pattern
         matches = _glob!(matches, pat)
     end

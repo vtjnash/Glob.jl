@@ -207,6 +207,24 @@ end
 @test !occursin(fn"/b/**"d, "/a/c.png")
 @test !occursin(fn"/**"d, "a/c.png")
 
+@test occursin(fn"**/c/**/*"d, "a/b/c/d/e/test.png")
+@test !occursin(fn"**/c/*/*"d, "a/b/c/d/e/test.png")
+@test occursin(fn"**/c/**/*.png"d, "a/b/c/d/e/test.png")
+@test !occursin(fn"**/c/**/*.png"d, "a/b/c/d/e/test.gif")
+
+@test occursin(fn"**/c/**/*.png"d, "a/b/c/d/e/.png")
+@test occursin(fn"**/c/**/*png"d, "a/b/c/d/e/.png")
+@test occursin(fn"**/c/**/?png"d, "a/b/c/d/e/.png")
+
+@test !occursin(fn"**/c/**/?png"dp, "a/b/c/d/e/.png")
+@test !occursin(fn"**/c/**/*png"dp, "a/b/c/d/e/.png")
+
+@test !occursin(fn"**/c/**/?png"dp, "a/.b/c/d/e/apng")
+@test !occursin(fn"**/c/**/?png"dp, ".a/b/c/d/e/apng")
+@test !occursin(fn"**/c/**/?png"dp, "a/b/c/d/e/.png")
+@test !occursin(fn"*/**/*.png"d, "c.png")
+@test !occursin(fn"**/*/*.png"d, "c.png")
+
 function test_string(x1)
     x2 = string(eval(Meta.parse(x1)))
     x1 == x2 ? nothing : error(string(
