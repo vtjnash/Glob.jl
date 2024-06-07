@@ -483,11 +483,13 @@ function glob(fn::FilenameMatch, rootdir::AbstractString = "";
     isempty(rootdir) && (rootdir = pwd())
 
     matches = String[]
-    for (root, dirs, files) in walkdir(rootdir; topdown, follow_symlinks, onerror)
+    firstlevel = true
+    for (root, dirs, files) in @static(VERSION < v"1.1" ? walkdir(rootdir) : walkdir(rootdir; follow_symlinks, onerror))
         if !dirmode & !filesonly
-            index = [isempty(readdir(joinpath(root, x))) for x in dirs]
-            dirs = dirs[index]
-            files = isempty(dirs) ? files : sort(vcat(dirs, files), rev = !topdown)
+            prepend!(files, dirs)
+            # don't add rootdir
+            firstlevel || pushfirst!(files, root)
+            firstlevel = false
         end
         for file in (dirmode ? dirs : files)
             file = joinpath(root, file)
@@ -497,7 +499,15 @@ function glob(fn::FilenameMatch, rootdir::AbstractString = "";
             occursin(fn, relpattern) && push!(matches, relative ? relfile : file)
         end
     end
-    matches
+
+    @static VERSION < v"1.4" && sort!(matches)
+    
+    if !dirmode & !filesonly
+        unique!(sort!(matches))
+    end
+    topdown || reverse!(matches)
+
+    return matches
 end
 
 function glob(s::AbstractString, rootdir::AbstractString = "";
@@ -520,7 +530,7 @@ function glob(g::GlobMatch, rootdir::AbstractString = "";
 )
     any(isa.(g.pattern, Regex)) && return _glob(g, rootdir)
 
-    fn = FilenameMatch(join([fn isa AbstractString ? fn : fn.pattern for fn in g.pattern], "/"), PATHNAME)
+    fn = FilenameMatch(join([fn isa AbstractString ? fn : fn.pattern for fn in g.pattern], "/"), PATHNAME | PERIOD)
     glob(fn, rootdir; relative, topdown, follow_symlinks, onerror)
 end
 
