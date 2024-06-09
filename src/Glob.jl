@@ -73,15 +73,14 @@ function occursin(fn::FilenameMatch, s::AbstractString)
     starmatch = i
     
     # globstar_index = 1
-    globstar_mi = Int[]
-    globstarmatch = Int[]
-    globstar = 0
+    globstar_mi = 0
+    globstarmatch = 0
     period = periodfl
-    globstar_period = false
+    globstar_period = false # leading period detected during globstar match
     while true
         star = 0
         match_fails = false
-        isempty(globstar_mi) ||(mi = globstar_mi[end]) # reset pattern index of the latest globstar pattern, if it exists
+        globstar_mi > 0 && (mi = globstar_mi[end]) # reset pattern index of the latest globstar pattern, if it exists
         while true
             matchnext = iterate(s, i)
             matchnext === nothing && break
@@ -90,11 +89,12 @@ function occursin(fn::FilenameMatch, s::AbstractString)
                 match = false # string characters left to match, but no pattern left
             else
                 mc, mi = patnext
-                if mc == '*' && pathname && length(pattern) > mi && pattern[mi:nextind(pattern, mi)] == "*/"
+                @debug s[i:end], pattern[mi:end]
+            if mc == '*' && pathname && length(pattern) > mi && pattern[mi:nextind(pattern, mi)] == "*/"
                     star = 0
                     mi += 2
-                    push!(globstarmatch, i)
-                    push!(globstar_mi, mi)
+                    globstarmatch = i
+                    globstar_mi = mi
                     c = '/' # fake previous character to indicate end of directory
                     match = true
                 elseif mc == '*'
@@ -102,6 +102,7 @@ function occursin(fn::FilenameMatch, s::AbstractString)
                     star = mi
                     c, _ = matchnext # peek-ahead
                     if period & (c == '.')
+                        globstar_period = globstarmatch > 0
                         (match_fails = true) && break
                     end
                     match = true
@@ -120,7 +121,7 @@ function occursin(fn::FilenameMatch, s::AbstractString)
                             (match_fails = true) && break
                         end
                         if period & (c == '.')
-                            # match = false
+                            globstar_period = globstarmatch > 0
                             (match_fails = true) && break
                         end
                         match = true
@@ -133,6 +134,7 @@ function occursin(fn::FilenameMatch, s::AbstractString)
                         end
                         match = ((c == mc) || (caseless && uppercase(c)==uppercase(mc)))
                     end
+                    globstar_period = period && globstarmatch > 0 && (c == '.')
                 end
             end
             if !match # try to backtrack and add another character to the last *
@@ -145,7 +147,6 @@ function occursin(fn::FilenameMatch, s::AbstractString)
                 starmatch = i
             end
             period = (periodfl & pathname & (c == '/'))
-            globstar_period = period && !isempty(globstarmatch)
         end
         while true # allow trailing *'s
             patnext = iterate(pattern, mi)
@@ -158,18 +159,18 @@ function occursin(fn::FilenameMatch, s::AbstractString)
         end
         if match_fails
             # if in a globstar move to next directory, otherwise return false
-            if !isempty(globstarmatch)
+            if globstarmatch > 0
                 x = findnext('/', s, globstarmatch[end])
                 if x === nothing || globstar_period
-                    pop!(globstarmatch)
-                    pop!(globstar_mi)
+                    globstarmatch = 0
+                    globstar_mi = 0
                     globstar_period = false
                 else
-                    globstarmatch[end] = i = x + 1
+                    globstarmatch = i = x + 1
                     period = periodfl
                 end
             end
-            isempty(globstarmatch) && return false
+            globstarmatch == 0 && return false
         else
             return true
         end
