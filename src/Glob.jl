@@ -476,6 +476,8 @@ function glob(fn::FilenameMatch, rootdir::AbstractString = "";
         error("Glob pattern cannot be empty or start with a '/' character")
     end
 
+    onerror === nothing && (onerror = (error -> @warn(error)))
+   
     dirmode = endswith(fn.pattern, '/')
     dirmode && filesonly && return String[]
     dirmode && (fn = FilenameMatch(fn.pattern[1:end-1], fn.options))
