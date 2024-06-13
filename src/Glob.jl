@@ -475,7 +475,7 @@ function glob(fn::FilenameMatch, rootdir::AbstractString = "";
     if isempty(fn.pattern) || first(fn.pattern) == '/'
         error("Glob pattern cannot be empty or start with a '/' character")
     end
-   
+
     dirmode = endswith(fn.pattern, '/')
     dirmode && filesonly && return String[]
     dirmode && (fn = FilenameMatch(fn.pattern[1:end-1], fn.options))
@@ -485,7 +485,7 @@ function glob(fn::FilenameMatch, rootdir::AbstractString = "";
 
     matches = String[]
     firstlevel = true
-    for (root, dirs, files) in @static(VERSION < v"1.1" ? walkdir(rootdir) : walkdir(rootdir; follow_symlinks, onerror))
+    for (root, dirs, files) in @static(VERSION < v"1.1" ? walkdir(rootdir) : walkdir(rootdir; follow_symlinks = follow_symlinks, onerror = onerror))
         if !dirmode & !filesonly
             prepend!(files, dirs)
             # don't add rootdir
@@ -493,6 +493,7 @@ function glob(fn::FilenameMatch, rootdir::AbstractString = "";
             firstlevel = false
         end
         for file in (dirmode ? dirs : files)
+            sleep(0) # needed for proper handling of `onerror` in `walkdir`, seems to be a bug
             file = joinpath(root, file)
             relfile = relpath(file, rootdir)
             relpattern = Sys.iswindows() ? replace(relfile, '\\' => '/') : relfile
@@ -519,7 +520,7 @@ function glob(s::AbstractString, rootdir::AbstractString = "";
     onerror::Union{Function, Nothing} = nothing
 )
     fn = FilenameMatch(s, PATHNAME | PERIOD)
-    glob(fn, rootdir; relative, topdown, follow_symlinks, onerror)
+    glob(fn, rootdir; relative = relative, topdown = topdown, follow_symlinks = follow_symlinks, onerror = onerror)
 end
 
 function glob(g::GlobMatch, rootdir::AbstractString = "";
@@ -532,7 +533,7 @@ function glob(g::GlobMatch, rootdir::AbstractString = "";
     any(isa.(g.pattern, Regex)) && return _glob(g, rootdir)
 
     fn = FilenameMatch(join([fn isa AbstractString ? fn : fn.pattern for fn in g.pattern], "/"), PATHNAME | PERIOD)
-    glob(fn, rootdir; relative, topdown, follow_symlinks, onerror)
+    glob(fn, rootdir; relative = relative, topdown = topdown, follow_symlinks = follow_symlinks, onerror = onerror)
 end
 
 glob(pattern, rootdir::AbstractString="") = _glob(pattern, rootdir)
