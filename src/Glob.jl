@@ -40,7 +40,7 @@ Returns a `Glob.FilenameMatch` object, which can be used with `ismatch()` or `oc
 * `i` = `CASELESS` : Performs case-insensitive matching
 * `p` = `PERIOD` : A leading period (`.`) character must be exactly matched by a period (`.`) character (not a `?`, `*`, or `[]`). A leading period is a period at the beginning of a string, or a period after a slash if PATHNAME is true.
 * `e` = `NOESCAPE` : Do not treat backslash (`\`) as a special character (in extended mode, this only outside of `[]`)
-* `d` = `PATHNAME` : A slash (`/`) character must be exactly matched by a slash (`/`) character (not a `?`, `*`, or `[]`)
+* `d` = `PATHNAME` : A slash (`/`) character must be exactly matched by a slash (`/`) character (not a `?`, `*`, or `[]`), "**/" matches zero or more directories (globstar)
 * `x` = `EXTENDED` : Additional features borrowed from newer shells, such as `bash` and `tcsh`
     * Backslash (`\`) characters in `[]` groups escape the next character
 """
@@ -64,74 +64,117 @@ function occursin(fn::FilenameMatch, s::AbstractString)
     noescape = (fn.options & NOESCAPE) != 0
     pathname = (fn.options & PATHNAME) != 0
     extended = (fn.options & EXTENDED) != 0
+
+    # if pattern ends with "**", append "/*" to allow matching of all files
+    pathname && endswith(pattern, "**") && (pattern *= "/*")
+
     mi = firstindex(pattern) # current index into pattern
     i = firstindex(s) # current index into s
     starmatch = i
-    star = 0
+    
+    globstar_mi = 0
+    globstarmatch = 0
     period = periodfl
+    globstar_period = false # leading period detected during globstar match
     while true
-        matchnext = iterate(s, i)
-        matchnext === nothing && break
-        patnext = iterate(pattern, mi)
-        if patnext === nothing
-            match = false # string characters left to match, but no pattern left
-        else
-            mc, mi = patnext
-            if mc == '*'
-                starmatch = i # backup the current search index
-                star = mi
-                c, _ = matchnext # peek-ahead
-                if period & (c == '.')
-                    return false # * does not match leading .
-                end
-                match = true
+        star = 0
+        match_fails = false
+        globstar_mi > 0 && (mi = globstar_mi[end]) # reset pattern index of the latest globstar pattern, if it exists
+        while true
+            matchnext = iterate(s, i)
+            matchnext === nothing && break
+            patnext = iterate(pattern, mi)
+            if patnext === nothing
+                match = false # string characters left to match, but no pattern left
             else
-                c, i = matchnext
-                if mc == '['
-                    mi, valid, match = _match(pattern, mi, c, caseless, extended)
-                    if pathname & valid & match & (c == '/')
-                        match = false
-                    end
-                    if period & valid & match & (c == '.')
-                        match = false
-                    end
-                elseif mc == '?'
-                    if pathname & (c == '/')
-                        return false # ? does not match /
-                    end
-                    if period & (c == '.')
-                        return false # ? does not match leading .
-                    end
-                    match = true
-                else
-                    if (!noescape) & (mc == '\\') # escape the next character after backslash, unless it is the last character
-                        patnext = iterate(pattern, mi)
-                        if patnext !== nothing
-                            mc, mi = patnext
+                mc, mi = patnext
+                    @debug s[i:end], pattern[mi:end]
+                    # test if the current pattern character is a globstar
+                    if mc == '*' && pathname && length(pattern) > mi && pattern[mi:nextind(pattern, mi)] == "*/" && (mi == 2 || mi > 2 && pattern[mi-2] == '/')
+                            star = 0
+                            mi += 2
+                            globstarmatch = i
+                            globstar_mi = mi
+                            c = '/' # fake previous character to indicate end of directory
+                            match = true
+                    elseif mc == '*'
+                        starmatch = i # backup the current search index
+                        star = mi
+                        c, _ = matchnext # peek-ahead
+                        if period & (c == '.')
+                                globstar_period = globstarmatch > 0
+                                (match_fails = true) && break
                         end
-                    end
-                    match = ((c == mc) || (caseless && uppercase(c)==uppercase(mc)))
+                        match = true
+                    else
+                        c, i = matchnext
+                        if mc == '['
+                            mi, valid, match = _match(pattern, mi, c, caseless, extended)
+                            if pathname & valid & match & (c == '/')
+                                match = false
+                            end
+                            if period & valid & match & (c == '.')
+                                match = false
+                            end
+                        elseif mc == '?'
+                            if pathname & (c == '/')
+                                    (match_fails = true) && break
+                            end
+                            if period & (c == '.')
+                                    globstar_period = globstarmatch > 0
+                                    (match_fails = true) && break
+                            end
+                            match = true
+                        else
+                            if (!noescape) & (mc == '\\') # escape the next character after backslash, unless it is the last character
+                                patnext = iterate(pattern, mi)
+                                if patnext !== nothing
+                                    mc, mi = patnext
+                                end
+                            end
+                            match = ((c == mc) || (caseless && uppercase(c)==uppercase(mc)))
+                        end
+                        globstar_period = period && globstarmatch > 0 && (c == '.')
                 end
             end
-        end
-        if !match # try to backtrack and add another character to the last *
-            star == 0 && return false
-            c, i = something(iterate(s, starmatch)) # starmatch is strictly <= i, so it is known that it must be a valid index
-            if pathname & (c == '/')
-                return false # * does not match /
+            if !match # try to backtrack and add another character to the last *
+                    (star == 0) && (match_fails = true) && break
+                c, i = something(iterate(s, starmatch)) # starmatch is strictly <= i, so it is known that it must be a valid index
+                if pathname & (c == '/')
+                        (match_fails = true) && break # return false # * does not match /
+                end
+                mi = star
+                starmatch = i
             end
-            mi = star
-            starmatch = i
+            period = (periodfl & pathname & (c == '/'))
         end
-        period = (periodfl & pathname & (c == '/'))
+        while true # allow trailing *'s
+            patnext = iterate(pattern, mi)
+            patnext === nothing && break
+            mc, mi = patnext
+            if mc != '*'
+                # pattern characters left to match, but no string left
+                match_fails = true
+            end
+        end
+        if match_fails
+            # if in a globstar move to next directory, otherwise return false
+            if globstarmatch > 0
+                x = findnext('/', s, globstarmatch[end])
+                if x === nothing || globstar_period
+                    globstarmatch = 0
+                    globstar_mi = 0
+                    globstar_period = false
+                else
+                    globstarmatch = i = x + 1
+                    period = periodfl
+                end
+            end
+            globstarmatch == 0 && return false
+        else
+            return true
+        end
     end
-    while true # allow trailing *'s
-        patnext = iterate(pattern, mi)
-        patnext === nothing && break
-        mc, mi = patnext
-        mc == '*' || return false # pattern characters left to match, but no string left
-    end
-    return true
 end
 
 @deprecate ismatch(fn::FilenameMatch, s::AbstractString) occursin(fn, s)
