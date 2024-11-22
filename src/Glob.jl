@@ -410,7 +410,7 @@ A trailing `/` (or equivalently, a trailing empty string in the vector) will cau
 Attempting to use a pattern with a leading `/` or the empty string is an error; use the `directory` argument to specify the absolute path to the directory in such a case.
 """
 function glob(pattern, prefix::AbstractString="")
-    matches = String[prefix]
+    matches = [prefix]
     for pat in GlobMatch(pattern).pattern
         matches = _glob!(matches, pat)
     end
@@ -435,7 +435,7 @@ function _glob!(matches, pat::AbstractString)
 end
 
 function _glob!(matches, pat)
-    m2 = String[]
+    m2 = eltype(matches)[]
     for m in matches
         if isempty(m)
             for d in readdir()
