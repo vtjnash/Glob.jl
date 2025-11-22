@@ -164,6 +164,72 @@ end
 @test occursin(fn"\?"e, "\\!")
 @test !occursin(fn"\?"e, "?")
 
+@testset "FilenameMatch with ** globstar" begin
+    # Basic **/ patterns
+    @test occursin(fn"**/*.png"d, "c.png")
+    @test occursin(fn"**/*.png"d, "a/c.png")
+    @test occursin(fn"**/*.png"d, "a/b/c.png")
+
+    # Absolute paths with **/
+    @test occursin(fn"/**/*.png"d, "/c.png")
+    @test occursin(fn"/**/*.png"d, "/a/c.png")
+    @test occursin(fn"/**/*.png"d, "/a/b/c.png")
+
+    @test occursin(fn"**/*.png"d, "/c.png")
+    @test occursin(fn"**/*.png"d, "/a/c.png")
+    @test occursin(fn"**/*.png"d, "/a/b/c.png")
+
+    @test !occursin(fn"/**/*.png"d, "c.png")
+    @test !occursin(fn"/**/*.png"d, "a/c.png")
+    @test !occursin(fn"/**/*.png"d, "a/b/c.png")
+
+    # ** without trailing /
+    @test occursin(fn"**.png"d, "c.png")
+    @test !occursin(fn"**.png"d, "a/b/c.png")
+
+    # ** alone
+    @test occursin(fn"**"d, "c.png")
+    @test occursin(fn"**"d, "a/c.png")
+    @test occursin(fn"**"d, "/a/c.png")
+    @test occursin(fn"/**"d, "/a/c.png")
+    @test occursin(fn"/a/**"d, "/a/c.png")
+    @test !occursin(fn"/b/**"d, "/a/c.png")
+    @test !occursin(fn"/**"d, "a/c.png")
+
+    # Complex patterns with multiple **/
+    @test occursin(fn"**/c/**/*"d, "a/b/c/d/e/test.png")
+    @test !occursin(fn"**/c/*/*"d, "a/b/c/d/e/test.png")
+    @test occursin(fn"**/c/**/*.png"d, "a/b/c/d/e/test.png")
+    @test !occursin(fn"**/c/**/*.png"d, "a/b/c/d/e/test.gif")
+
+    # PERIOD flag tests
+    @test occursin(fn"**/c/**/*.png"d, "a/b/c/d/e/.png")
+    @test occursin(fn"**/c/**/*png"d, "a/b/c/d/e/.png")
+    @test occursin(fn"**/c/**/?png"d, "a/b/c/d/e/.png")
+
+    @test !occursin(fn"**/c/**/?png"dp, "a/b/c/d/e/.png")
+    @test !occursin(fn"**/c/**/*png"dp, "a/b/c/d/e/.png")
+
+    @test !occursin(fn"**/c/**/?png"dp, "a/.b/c/d/e/apng")
+    @test !occursin(fn"**/c/**/?png"dp, ".a/b/c/d/e/apng")
+    @test !occursin(fn"**/c/**/?png"dp, "a/b/c/d/e/.png")
+    @test !occursin(fn"*/**/*.png"d, "c.png")
+    @test !occursin(fn"**/*/*.png"d, "c.png")
+
+    @test occursin(fn"**/c/**/*png"dp, "a/b/c/d/e/*png")
+    @test occursin(fn"**/c/**/*png"d, "a/b/c/d/e/.png")
+    @test !occursin(fn"**/c/**/*png"dp, "a/b/c/d/e/.png")
+
+    # Wildcards combined with **/
+    @test occursin(fn"a*/**/c/test.gif"d, "ab/b/c/test.gif")
+    @test occursin(fn"a*/**/test.gif"d, "ab/b/c/test.gif")
+    @test !occursin(fn"a**/test.gif"d, "ab/b/h/test.gif")
+
+    # Test ** without / (in non-pathname mode, matches any character including /)
+    @test occursin(fn"a/**test.jl", "a/test.jl")
+    @test occursin(fn"a/**test.jl", "a/b/test.jl")
+end
+
 @test_types glob"ab/?/d".pattern (AbstractString, Glob.FilenameMatch, AbstractString)
 @test_types glob"""ab/*/d""".pattern (AbstractString, Glob.FilenameMatch, AbstractString)
 @test length(glob"ab/[/d".pattern) == 3
