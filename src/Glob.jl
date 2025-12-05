@@ -76,6 +76,7 @@ function occursin(fn::FilenameMatch, s::AbstractString)
     globstar_mi = 0    # Pattern index after globstar
     globstar_period = false  # Track if period was encountered during globstar
     period = periodfl
+    after_slash = true  # Track if previous pattern char was '/' (or at start)
     while true
         matchnext = iterate(s, i)
         matchnext === nothing && break
@@ -90,26 +91,34 @@ function occursin(fn::FilenameMatch, s::AbstractString)
         else
             mc, mi = patnext
             if mc == '*'
-                # Check if this is a **/ globstar pattern (PR #39 style)
-                # Conditions: **, followed by /, and either at start or after /
-                if pathname && length(pattern) > mi && pattern[mi:nextind(pattern, mi)] == "*/" && (mi == 2 || mi > 2 && pattern[mi-2] == '/')
-                    # This is **/ globstar pattern - use directory-level backtracking
-                    mi += 2  # Skip past **/
-                    globstarmatch = i
-                    globstar_mi = mi
-                    c = '/'  # Fake previous character as /
-                    match = true
-                else
-                    # Not a globstar pattern - treat as regular *
-                    # Even if it's **, each * will be processed separately
-                    starmatch = i # backup the current search index
-                    star = mi
-                    c, _ = matchnext # peek-ahead
-                    if period & (c == '.')
-                        return false # * does not match leading .
+                # Check if this is a **/ globstar pattern
+                # Conditions: after '/' (or at start), followed by '*/'
+                # Use iterate to peek ahead without string allocation
+                peek1_c, peek1_s = @something iterate(pattern, mi) @goto no_globstar
+                if pathname && after_slash && peek1_c == '*'
+                    peek2_c, peek2_s = @something iterate(pattern, peek1_s) @goto no_globstar
+                    if peek2_c == '/'
+                        # This is **/ globstar pattern - use directory-level backtracking
+                        mi = peek2_s  # Skip past **/
+                        globstarmatch = i
+                        globstar_mi = mi
+                        after_slash = true  # After **/, we're effectively after a /
+                        c = '/'  # Fake previous character as /
+                        match = true
+                        continue
                     end
-                    match = true
                 end
+                @label no_globstar
+                # Not a globstar pattern - treat as regular *
+                # Even if it's **, each * will be processed separately
+                starmatch = i # backup the current search index
+                star = mi
+                c, _ = matchnext # peek-ahead
+                if period & (c == '.')
+                    return false # * does not match leading .
+                end
+                after_slash = false
+                match = true
             else
                 c, i = matchnext
                 if mc == '['
@@ -141,6 +150,8 @@ function occursin(fn::FilenameMatch, s::AbstractString)
                 if globstarmatch > 0 && period && (c == '.')
                     globstar_period = true
                 end
+                # Update after_slash for next iteration (track if pattern char was '/')
+                after_slash = (mc == '/')
             end
         end
         if !match # try to backtrack
