@@ -173,6 +173,10 @@ function occursin(fn::FilenameMatch, s::AbstractString)
                 end
                 # Update after_slash for next iteration (track if pattern char was '/')
                 after_slash = (mc == '/')
+                if match && after_slash && pathname
+                    # in pathname mode, once matching a / explicitly, backtracking to starmatch will not be necessary
+                    star = 0
+                end
             end
         end
         if !match # try to backtrack
