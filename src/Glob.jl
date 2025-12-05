@@ -75,6 +75,8 @@ function occursin(fn::FilenameMatch, s::AbstractString)
     globstarmatch = 0  # Track globstar match position for directory-level backtracking
     globstar_mi = 0    # Pattern index after globstar
     globstar_period = false  # Track if period was encountered during globstar
+    globstar_star = 0  # Saved star state when entering globstar
+    globstar_starmatch = i  # Saved starmatch state when entering globstar
     period = periodfl
     after_slash = true  # Track if previous pattern char was '/' (or at start)
     while true
@@ -102,6 +104,9 @@ function occursin(fn::FilenameMatch, s::AbstractString)
                         mi = peek2_s  # Skip past **/
                         globstarmatch = i
                         globstar_mi = mi
+                        # Save current star state for restoration on globstar backtrack
+                        globstar_star = star
+                        globstar_starmatch = starmatch
                         after_slash = true  # After **/, we're effectively after a /
                         c = '/'  # Fake previous character as /
                         match = true
@@ -155,30 +160,30 @@ function occursin(fn::FilenameMatch, s::AbstractString)
             end
         end
         if !match # try to backtrack
-            if globstarmatch > 0
-                # Globstar backtracking: jump to next directory level
-                nextslash = findnext('/', s, globstarmatch)
-                if nextslash === nothing || globstar_period
-                    # Can't backtrack globstar anymore: no more slashes or period encountered
-                    globstarmatch = 0
-                end
-                if globstarmatch > 0
-                    # Jump to the character after the next /
-                    i = nextind(s, nextslash)
-                    globstarmatch = i
-                    mi = globstar_mi
-                    period = periodfl
+            # Try * backtracking first
+            if star != 0
+                c, i = something(iterate(s, starmatch))
+                if !(pathname & (c == '/'))
+                    mi = star
+                    starmatch = i
                     continue
                 end
             end
-            # Regular star backtracking
-            star == 0 && return false
-            c, i = something(iterate(s, starmatch)) # starmatch is strictly <= i, so it is known that it must be a valid index
-            if pathname & (c == '/')
-                return false # * does not match / in pathname mode
+            # Then try **/ backtracking
+            if globstarmatch > 0
+                nextslash = findnext('/', s, globstarmatch)
+                if nextslash !== nothing && !globstar_period
+                    i = nextind(s, nextslash)
+                    globstarmatch = i
+                    mi = globstar_mi
+                    star = globstar_star
+                    starmatch = globstar_starmatch
+                    period = periodfl
+                    continue
+                end
+                globstarmatch = 0
             end
-            mi = star
-            starmatch = i
+            return false
         end
         period = (periodfl & pathname & (c == '/'))
     end
