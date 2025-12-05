@@ -6,6 +6,26 @@ import Base: readdir, show, occursin
 
 export glob, @fn_str, @fn_mstr, @glob_str, @glob_mstr
 
+if !@isdefined(var"@something")
+macro something(args...)
+    noth = GlobalRef(Base, :nothing)
+    something = GlobalRef(Base, :something)
+    expr = :($something($noth))
+    for arg in reverse(args)
+        val = gensym()
+        expr = quote
+            $val = $(esc(arg))
+            if !isnothing($val)
+                $something($val)
+            else
+                $expr
+            end
+        end
+    end
+    return expr
+end
+end
+
 const CASELESS = 1 << 0 # i -- Do case-insensitive matching
 const PERIOD   = 1 << 1 # p -- A leading period (.) character must be exactly matched by a period (.) character
 const NOESCAPE = 1 << 2 # e -- Do not treat backslash (\) as a special character
