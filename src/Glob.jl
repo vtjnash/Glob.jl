@@ -65,8 +65,8 @@ function occursin(fn::FilenameMatch, s::AbstractString)
     pathname = (fn.options & PATHNAME) != 0
     extended = (fn.options & EXTENDED) != 0
 
-    # If pattern ends with "**", append "/*" to allow matching of all files (PR #39)
-    pathname && endswith(pattern, "**") && (pattern *= "/*")
+    # Track if pattern ends with "**" to allow matching of all files
+    trailing_globstar = pathname && endswith(pattern, "**")
 
     mi = firstindex(pattern) # current index into pattern
     i = firstindex(s) # current index into s
@@ -81,7 +81,12 @@ function occursin(fn::FilenameMatch, s::AbstractString)
         matchnext === nothing && break
         patnext = iterate(pattern, mi)
         if patnext === nothing
-            match = false # string characters left to match, but no pattern left
+            # String characters left to match, but no pattern left
+            if trailing_globstar
+                # If trailing_globstar is set, the remaining string is matched by the implicit /*
+                return true
+            end
+            match = false
         else
             mc, mi = patnext
             if mc == '*'
