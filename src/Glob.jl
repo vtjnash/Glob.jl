@@ -15,10 +15,10 @@ macro something(args...)
         val = gensym()
         expr = quote
             $val = $(esc(arg))
-            if !isnothing($val)
-                $something($val)
-            else
+            if $val === $noth
                 $expr
+            else
+                $something($val)
             end
         end
     end
