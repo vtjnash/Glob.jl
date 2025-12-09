@@ -6,6 +6,26 @@ import Base: readdir, show, occursin
 
 export glob, @fn_str, @fn_mstr, @glob_str, @glob_mstr
 
+@static if VERSION < v"1.7"
+macro something(args...)
+    noth = GlobalRef(Base, :nothing)
+    something = GlobalRef(Base, :something)
+    expr = :($something($noth))
+    for arg in reverse(args)
+        val = gensym()
+        expr = quote
+            $val = $(esc(arg))
+            if $val === $noth
+                $expr
+            else
+                $something($val)
+            end
+        end
+    end
+    return expr
+end
+end
+
 const CASELESS = 1 << 0 # i -- Do case-insensitive matching
 const PERIOD   = 1 << 1 # p -- A leading period (.) character must be exactly matched by a period (.) character
 const NOESCAPE = 1 << 2 # e -- Do not treat backslash (\) as a special character
@@ -32,6 +52,7 @@ function FilenameMatch(pattern::AbstractString, flags::AbstractString)
     end
     return FilenameMatch(pattern, options)
 end
+
 """
     fn"pattern"ipedx
 
@@ -40,9 +61,9 @@ Returns a `Glob.FilenameMatch` object, which can be used with `ismatch()` or `oc
 * `i` = `CASELESS` : Performs case-insensitive matching
 * `p` = `PERIOD` : A leading period (`.`) character must be exactly matched by a period (`.`) character (not a `?`, `*`, or `[]`). A leading period is a period at the beginning of a string, or a period after a slash if PATHNAME is true.
 * `e` = `NOESCAPE` : Do not treat backslash (`\`) as a special character (in extended mode, this only outside of `[]`)
-* `d` = `PATHNAME` : A slash (`/`) character must be exactly matched by a slash (`/`) character (not a `?`, `*`, or `[]`)
+* `d` = `PATHNAME` : A slash (`/`) character must be exactly matched by a slash (`/`) character (not a `?`, `*`, or `[]`), "**/" matches zero or more directories (globstar)
 * `x` = `EXTENDED` : Additional features borrowed from newer shells, such as `bash` and `tcsh`
-    * Backslash (`\`) characters in `[]` groups escape the next character
+    * Backslash (`\``) characters in `[]` groups escape the next character
 """
 macro fn_str(pattern, flags...) FilenameMatch(pattern, flags...) end
 macro fn_mstr(pattern, flags...) FilenameMatch(pattern, flags...) end
@@ -64,26 +85,60 @@ function occursin(fn::FilenameMatch, s::AbstractString)
     noescape = (fn.options & NOESCAPE) != 0
     pathname = (fn.options & PATHNAME) != 0
     extended = (fn.options & EXTENDED) != 0
+
     mi = firstindex(pattern) # current index into pattern
     i = firstindex(s) # current index into s
     starmatch = i
     star = 0
+    globstarmatch = 0  # Track globstar match position for directory-level backtracking
+    globstar_mi = 0    # Pattern index after globstar
+    globstar_period = false  # Track if period was encountered during globstar
+    globstar_star = 0  # Saved star state when entering globstar
+    globstar_starmatch = i  # Saved starmatch state when entering globstar
     period = periodfl
+    after_slash = true  # Track if previous pattern char was '/' (or at start)
     while true
         matchnext = iterate(s, i)
         matchnext === nothing && break
         patnext = iterate(pattern, mi)
         if patnext === nothing
-            match = false # string characters left to match, but no pattern left
+            # String characters left to match, but no pattern left
+            match = false
         else
             mc, mi = patnext
             if mc == '*'
+                # Check if this is a **/ globstar pattern
+                # Conditions: after '/' (or at start), followed by '*/'
+                # Use iterate to peek ahead without string allocation
+                if pathname && after_slash
+                    peek1_c, peek1_s = @something iterate(pattern, mi) @goto no_globstar
+                    if peek1_c == '*'
+                        peek2_c, peek2_s = @something iterate(pattern, peek1_s) return true # this is trailing_globstar
+                        if peek2_c == '/'
+                            # This is **/ globstar pattern - use directory-level backtracking
+                            mi = peek2_s  # Skip past **/
+                            globstarmatch = i
+                            globstar_mi = mi
+                            # Save current star state for restoration on globstar backtrack
+                            globstar_star = star
+                            globstar_starmatch = starmatch
+                            after_slash = true  # After **/, we're effectively after a /
+                            c = '/'  # Fake previous character as /
+                            match = true
+                            continue
+                        end
+                    end
+                end
+                @label no_globstar
+                # Not a globstar pattern - treat as regular *
+                # Even if it's **, each * will be processed separately
                 starmatch = i # backup the current search index
                 star = mi
                 c, _ = matchnext # peek-ahead
                 if period & (c == '.')
                     return false # * does not match leading .
                 end
+                after_slash = false
                 match = true
             else
                 c, i = matchnext
@@ -112,20 +167,47 @@ function occursin(fn::FilenameMatch, s::AbstractString)
                     end
                     match = ((c == mc) || (caseless && uppercase(c)==uppercase(mc)))
                 end
+                # Track if we're matching a . during globstar
+                if globstarmatch > 0 && period && (c == '.')
+                    globstar_period = true
+                end
+                # Update after_slash for next iteration (track if pattern char was '/')
+                after_slash = (mc == '/')
+                if match && after_slash && pathname
+                    # in pathname mode, once matching a / explicitly, backtracking to starmatch will not be necessary
+                    star = 0
+                end
             end
         end
-        if !match # try to backtrack and add another character to the last *
-            star == 0 && return false
-            c, i = something(iterate(s, starmatch)) # starmatch is strictly <= i, so it is known that it must be a valid index
-            if pathname & (c == '/')
-                return false # * does not match /
+        if !match # try to backtrack
+            # Try * backtracking first
+            if star != 0
+                c, i = something(iterate(s, starmatch))
+                if !(pathname & (c == '/'))
+                    mi = star
+                    starmatch = i
+                    continue
+                end
             end
-            mi = star
-            starmatch = i
+            # Then try **/ backtracking
+            if globstarmatch > 0
+                nextslash = findnext(==('/'), s, globstarmatch)
+                if nextslash !== nothing && !globstar_period
+                    i = nextind(s, nextslash)
+                    globstarmatch = i
+                    mi = globstar_mi
+                    star = globstar_star
+                    starmatch = globstar_starmatch
+                    period = periodfl
+                    continue
+                end
+                globstarmatch = 0
+            end
+            return false
         end
         period = (periodfl & pathname & (c == '/'))
     end
-    while true # allow trailing *'s
+    while true # allow trailing *'s and **'s
         patnext = iterate(pattern, mi)
         patnext === nothing && break
         mc, mi = patnext
@@ -138,7 +220,7 @@ end
 
 filter!(fn::FilenameMatch, v) = filter!(x -> occursin(fn, x), v)
 filter(fn::FilenameMatch, v)  = filter(x -> occursin(fn, x), v)
-filter!(fn::FilenameMatch, d::Dict) = filter!(((k, v),) -> occursin(fn, k), d)
+filter!(fn::FilenameMatch, d::Dict) = filter!(((k, _),) -> occursin(fn, k), d)
 filter(fn::FilenameMatch, d::Dict) = filter!(fn, copy(d))
 
 function _match_bracket(pat::AbstractString, mc::Char, i, cl::Char, cu::Char) # returns (mc, i, valid, match)
@@ -153,7 +235,6 @@ function _match_bracket(pat::AbstractString, mc::Char, i, cl::Char, cu::Char) # 
     mc3 = mc4 = '\0'
     k0 = k1 = k2 = k3 = j
     next = iterate(pat, k3)
-    matchfail = false
     while mc3 != mc2 && mc4 != ']'
         if next === nothing
             return (mc, i, false, false)
@@ -216,7 +297,6 @@ function _match_bracket(pat::AbstractString, mc::Char, i, cl::Char, cu::Char) # 
         return (mc, k3, true, match)
     end
 end
-
 
 function _match(pat::AbstractString, i0, c::Char, caseless::Bool, extended::Bool) # returns (i, valid, match)
     if caseless
