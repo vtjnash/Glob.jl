@@ -191,7 +191,7 @@ function occursin(fn::FilenameMatch, s::AbstractString)
             end
             # Then try **/ backtracking
             if globstarmatch > 0
-                nextslash = findnext('/', s, globstarmatch)
+                nextslash = findnext(==('/'), s, globstarmatch)
                 if nextslash !== nothing && !globstar_period
                     i = nextind(s, nextslash)
                     globstarmatch = i
