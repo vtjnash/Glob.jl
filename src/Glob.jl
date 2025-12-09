@@ -388,6 +388,26 @@ Returns a `Glob.GlobMatch` object, which can be used with `glob()` or `readdir()
 macro glob_str(pattern) GlobMatch(pattern) end
 macro glob_mstr(pattern) GlobMatch(pattern) end
 
+"""
+    @g"GLOB"
+
+Create a Cmd object based on GLOB, allowing string interpolation.
+
+Relative globs are based on `pwd()`.
+"""
+macro g_str(pattern) :(do_g($(esc(Meta.parse("\"$(escape_string(pattern))\""))))) end
+
+function do_g(pattern)
+    isempty(pattern) && throw(ErrorException("Glob strings cannot be empty"))
+    pattern == "/" && return Cmd(["/"])
+    dir = pwd()
+    if pattern[1] == '/'
+        pattern = pattern[2:end]
+        dir = "/"
+    end
+    Cmd(glob(Glob.GlobMatch(pattern), dir))
+end
+
 struct GlobMatch
     pattern::Vector
     GlobMatch(pattern) = isempty(pattern) ? error("GlobMatch pattern cannot be an empty vector") : new(pattern)
