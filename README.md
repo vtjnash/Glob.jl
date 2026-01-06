@@ -44,7 +44,7 @@ Glob is implemented to have both a functional form and an object-oriented form. 
   * Returns a `Glob.GlobMatch` object, which can be used with `glob()` or `readdir()`. See above descriptions.
 
 * `fn"pattern"ipedx` ::
-  * Returns a `Glob.FilenameMatch` object, which can be used with `ismatch()` or `occursin()`. Available flags are:
+  * Returns a `Glob.FilenameMatch` object, which can be used with `occursin()`. Available flags are:
     * `i` = `CASELESS` : Performs case-insensitive matching
     * `p` = `PERIOD` : A leading period (`.`) character must be exactly matched by a period (`.`) character (not a `?`, `*`, or `[]`). A leading period is a period at the beginning of a string, or a period after a slash if PATHNAME is true.
     * `e` = `NOESCAPE` : Do not treat backslash (`\`) as a special character (in extended mode, this only outside of `[]`)
@@ -70,6 +70,50 @@ occursin(fn"a/**/b"d, "a/b")                        # true - zero directories be
 occursin(fn"a/**/b"d, "a/x/y/z/b")                  # true - multiple directories
 occursin(fn"**/c/**/*.png"d, "a/b/c/d/e/test.png")  # true - multiple globstars
 ```
+
+## Matching against arrays
+
+The `occursin(::GlobMatch, ::AbstractVector)` function allows matching a glob pattern against an array of path components:
+
+```julia
+gm = glob"src/*/test.jl"
+occursin(gm, ["src", "foo", "test.jl"])  # true
+occursin(gm, ["src", "bar", "test.jl"])  # true
+occursin(gm, ["src", "test.jl"])         # false - wrong length
+```
+
+Each element of the pattern is matched against the corresponding element of the array:
+- String literals require exact equality
+- `FilenameMatch` patterns (from `fn"..."` or wildcards in `glob"..."`) use `occursin` for matching
+- `Regex` patterns also work via `occursin`
+
+### GlobStar for array matching
+
+The `GlobStar()` singleton can be used in patterns to match zero or more array elements, similar to `**/` in pathname glob patterns. When parsing a string pattern with `glob"..."` or `GlobMatch(str)`, `**` path segments are automatically converted to `GlobStar()`:
+
+```julia
+# String patterns with ** are automatically parsed to GlobStar
+gm = glob"src/**/test.jl"
+occursin(gm, ["src", "test.jl"])              # true - GlobStar matches zero elements
+occursin(gm, ["src", "a", "test.jl"])         # true - GlobStar matches "a"
+occursin(gm, ["src", "a", "b", "c", "test.jl"]) # true - GlobStar matches "a", "b", "c"
+
+# Equivalent to manually constructing with GlobStar()
+gm = GlobMatch(["src", GlobStar(), fn"*.jl"])
+occursin(gm, ["src", "foo.jl"])           # true
+occursin(gm, ["src", "a", "b", "foo.jl"]) # true
+
+# GlobStar at the end matches any remaining elements
+gm = glob"src/**"
+occursin(gm, ["src"])                     # true
+occursin(gm, ["src", "foo", "bar"])       # true
+
+# Multiple GlobStars
+gm = glob"**/middle/**"
+occursin(gm, ["a", "b", "middle", "c"])   # true
+```
+
+`GlobStar()` also implements `occursin`, always returning `true` for any string, so it can be used with the `glob()` function as well (matching any single file/directory name).
 
 ## Unimplemented features
 
