@@ -389,7 +389,7 @@ macro glob_str(pattern) GlobMatch(pattern) end
 macro glob_mstr(pattern) GlobMatch(pattern) end
 
 struct GlobMatch
-    pattern::Vector
+    pattern::Vector{Any}
     GlobMatch(pattern) = isempty(pattern) ? error("GlobMatch pattern cannot be an empty vector") : new(pattern)
 end
 GlobMatch(gm::GlobMatch) = gm
@@ -398,13 +398,7 @@ function GlobMatch(pattern::AbstractString)
         error("Glob pattern cannot be empty or start with a / character")
     end
     pat = split(pattern, '/')
-    S = eltype(pat)
-    if !isconcretetype(S)
-        S = Any
-    else
-        S = Union{S, FilenameMatch{S}}
-    end
-    glob = Array{S}(undef, length(pat))
+    glob = Vector{Any}(undef, length(pat))
     extended = false
     for i = 1:length(pat)
         p = pat[i]
@@ -461,7 +455,7 @@ end
 
 Alias for [`glob()`](@ref).
 """
-readdir(pattern::GlobMatch, prefix::AbstractString="") = glob(pattern, prefix)
+readdir(pattern::GlobMatch, prefix="") = glob(pattern, prefix)
 
 """
     glob(pattern, [directory::AbstractString])
@@ -489,8 +483,11 @@ A trailing `/` (or equivalently, a trailing empty string in the vector) will cau
 
 Attempting to use a pattern with a leading `/` or the empty string is an error; use the `directory` argument to specify the absolute path to the directory in such a case.
 """
-function glob(pattern, prefix::AbstractString="")
-    matches = String[prefix]
+function glob(pattern, prefix="")
+    if prefix isa AbstractString && !(prefix isa String)
+        prefix = String(prefix)::String
+    end
+    matches = [prefix]
     for pat in GlobMatch(pattern).pattern
         matches = _glob!(matches, pat)
     end
@@ -515,7 +512,7 @@ function _glob!(matches, pat::AbstractString)
 end
 
 function _glob!(matches, pat)
-    m2 = String[]
+    m2 = empty(matches)
     for m in matches
         if isempty(m)
             for d in readdir()
