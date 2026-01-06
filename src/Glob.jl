@@ -537,9 +537,9 @@ occursin(gm, ["src", "foo.jl"])           # true
 occursin(gm, ["src", "a", "b", "foo.jl"]) # true
 ```
 """
-function occursin(gm::GlobMatch, arr::AbstractVector)
+occursin(gm::GlobMatch, arr::AbstractVector) = occursin_sub(gm, firstindex(gm.pattern), arr)
+function occursin_sub(gm::GlobMatch, pi::Int, arr::AbstractVector)
     pattern = gm.pattern
-    pi = firstindex(pattern)
     ai = firstindex(arr)
     # Track the most recent GlobStar ** for backtracking
     globstar_pi = 0 # Pattern index after the GlobStar
@@ -632,11 +632,71 @@ function glob(pattern, prefix="")
     if prefix isa AbstractString && !(prefix isa String)
         prefix = String(prefix)::String
     end
+    gm = GlobMatch(pattern)
+    pats = gm.pattern
     matches = [prefix]
-    for pat in GlobMatch(pattern).pattern
-        matches = _glob!(matches, pat)
+    i = firstindex(pats)
+    while i <= lastindex(pats)
+        pat = pats[i]
+        if pat isa GlobStar
+            # GlobStar: enumerate all paths recursively and filter by remaining pattern
+            return _globstar!(matches, i, gm)
+        else
+            matches = _glob!(matches, pat)
+            i += 1
+        end
     end
     return matches
+end
+
+function _globstar!(matches, i::Int, gm::GlobMatch)
+    results = empty(matches)
+    workqueue = Vector{String}[]
+    components = String[]
+    for prefix in matches
+        # Seed workqueue with directory contents
+        if isempty(prefix)
+            push!(workqueue, readdir())
+        else
+            if isdir(prefix)
+                push!(workqueue, readdir(prefix))
+                push!(components, "")
+            end
+
+            # GlobStar can match zero elements - check prefix itself
+            if occursin_sub(gm, i, components)
+                push!(results, prefix)
+            end
+
+            isempty(components) || pop!(components)
+        end
+
+        while !isempty(workqueue)
+            paths = pop!(workqueue)
+            if isempty(paths)
+                isempty(components) || pop!(components)
+            else
+                path = popfirst!(paths)
+                push!(workqueue, paths)
+                push!(components, path)
+                path = joinpath(prefix, components...)
+
+                # If directory, add contents to workqueue for further exploration
+                if isdir(path)
+                    push!(workqueue, readdir(path))
+                    push!(components, "")
+                end
+
+                # Check if this path matches remaining pattern
+                if occursin_sub(gm, i, components)
+                    push!(results, path)
+                end
+
+                pop!(components)
+            end
+        end
+    end
+    return results
 end
 
 function _glob!(matches, pat::AbstractString)

@@ -275,12 +275,45 @@ end
 @test_types glob"ab/[]/d".pattern (AbstractString, AbstractString, AbstractString)
 @test_types glob"ab/[]]/d".pattern (AbstractString, Glob.FilenameMatch, AbstractString)
 
-@test glob("*") == filter(x->!startswith(x,'.'), readdir()) == readdir(glob"*")
-@test glob(".*") == filter(x->startswith(x,'.'), readdir()) == readdir(glob".*")
-@test isempty(Glob.glob("[.]*"))
-@test glob([r".*"]) == readdir()
-@test glob([".", r".*"]) == map(x->joinpath(".",x), readdir())
-@test all([!startswith(x,'.') for x in Glob.glob("*.*")])
+# Tests run from any directory, so use dirname(@__DIR__) to get project root
+const root = dirname(@__DIR__)
+
+cd(root) do
+    @testset "regular glob readdir" begin
+        @test glob("*") == filter(x->!startswith(x, '.'), readdir()) == readdir(glob"*")
+        @test glob(".*") == filter(x->startswith(x, '.'), readdir()) == readdir(glob".*")
+        @test isempty(Glob.glob("[.]*"))
+        @test glob([r".*"]) == readdir()
+        @test glob([".", r".*"]) == map(x->joinpath(".", x), readdir())
+        @test all([!startswith(x, '.') for x in Glob.glob("*.*")])
+    end
+end
+
+@testset "glob with **" begin
+    @test glob("**/*.jl", root) == [joinpath(root, "src", "Glob.jl"), joinpath(root, "test", "runtests.jl")]
+    @test glob("src/**", root) == [joinpath(root, "src"), joinpath(root, "src", "Glob.jl")]
+    @test joinpath(root, "src", "Glob.jl") in glob("**/Glob.jl", root)
+    @test joinpath(root, "src", "Glob.jl") in glob("src/**/**/Glob.jl", root)
+
+    # Basic ** matches everything
+    all_files = glob("**", root)
+    @test root in all_files
+    @test joinpath(root, "src") in all_files
+    @test joinpath(root, "test") in all_files
+    @test joinpath(root, "README.md") in all_files
+
+    # Basic **/ matches folders
+    @test glob("**/", root) == [root, joinpath(root, "src"), joinpath(root, "test")]
+    @test glob("**/**/**/", root) == [root, joinpath(root, "src"), joinpath(root, "test")]
+    @test glob("src/**/**", root) == [joinpath(root, "src"), joinpath(root, "src", "Glob.jl")]
+    @test glob("src/**/**/", root) == [joinpath(root, "src")]
+
+    # ** in current directory
+    cd(root) do
+        @test glob("**/*.jl") == [joinpath("src", "Glob.jl"), joinpath("test", "runtests.jl")]
+        @test glob("**/") == ["src", "test"]
+    end
+end
 
 function test_string(x1)
     x2 = string(eval(Meta.parse(x1)))
