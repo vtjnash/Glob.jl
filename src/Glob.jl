@@ -609,18 +609,20 @@ function occursin_sub(gm::GlobMatch, pi::Int, arr::AbstractVector)
 end
 
 """
-    readdir(pattern::GlobMatch, [directory::AbstractString])
+    readdir(pattern::GlobMatch, [directory::AbstractString]; join::Bool=true, sort::Bool=true)
 
 Alias for [`glob()`](@ref).
 """
-readdir(pattern::GlobMatch, prefix="") = glob(pattern, prefix)
+readdir(pattern::GlobMatch, prefix=""; join::Bool=true, sort::Bool=true) = glob(pattern, prefix; join=join, sort=sort)
 
 """
-    glob(pattern, [directory::AbstractString])
+    glob(pattern, [directory::AbstractString]; join::Bool=true, sort::Bool=true)
 
 Returns a list of all files matching `pattern` in `directory`.
 
 * If directory is not specified, it defaults to the current working directory.
+* If `join` is `true` (default), the results are joined with the directory path. If `false`, only the matched paths relative to the directory are returned.
+* If `sort` is `true` (default), the results are sorted lexicographically.
 * Pattern can be any of:
     1. A `Glob.GlobMatch` object:
 
@@ -641,44 +643,54 @@ A trailing `/` (or equivalently, a trailing empty string in the vector) will cau
 
 Attempting to use a pattern with a leading `/` or the empty string is an error; use the `directory` argument to specify the absolute path to the directory in such a case.
 """
-function glob(pattern, prefix="")
+function glob(pattern, prefix=""; join::Bool=true, sort::Bool=true)
     if prefix isa AbstractString && !(prefix isa String)
         prefix = String(prefix)::String
     end
     gm = GlobMatch(pattern)
     pats = gm.pattern
-    matches = [prefix]
-    i = firstindex(pats)
-    while i <= lastindex(pats)
+    matches = [""]  # relative paths (without prefix)
+    for i in eachindex(pats)
         pat = pats[i]
         if pat isa GlobStar
             # GlobStar: enumerate all paths recursively and filter by remaining pattern
-            return _globstar!(matches, i, gm)
+            matches = _globstar!(prefix, matches, i, gm, sort)
+            break
         else
-            matches = _glob!(matches, pat)
-            i += 1
+            matches = _glob!(prefix, matches, pat, sort)
         end
+    end
+    if join && !(prefix isa AbstractString && isempty(prefix))
+        newmatches = prefix isa AbstractString ? matches : Vector{typeof(prefix)}(undef, length(matches))
+        for j in eachindex(matches)
+            m = matches[j]
+            newmatches[j] = isempty(m) ? prefix : joinpath(prefix, m)
+        end
+        matches = newmatches
     end
     return matches
 end
 
-function _globstar!(matches, i::Int, gm::GlobMatch)
+function _globstar!(prefix::AbstractString, matches, i::Int, gm::GlobMatch, sort::Bool)
     results = empty(matches)
     workqueue = Vector{String}[]
     components = String[]
-    for prefix in matches
+    for relpath in matches
+        # Build the actual filesystem path
+        fspath = isempty(relpath) ? prefix : joinpath(prefix, relpath)
+
         # Seed workqueue with directory contents
-        if isempty(prefix)
-            push!(workqueue, readdir())
+        if isempty(fspath)
+            push!(workqueue, _readdir(; sort=sort))
         else
-            if isdir(prefix)
-                push!(workqueue, readdir(prefix))
+            if isdir(fspath)
+                push!(workqueue, _readdir(fspath; sort=sort))
                 push!(components, "")
             end
 
-            # GlobStar can match zero elements - check prefix itself
+            # GlobStar can match zero elements - check relpath itself
             if occursin_sub(gm, i, components)
-                push!(results, prefix)
+                push!(results, relpath)
             end
 
             isempty(components) || pop!(components)
@@ -689,20 +701,22 @@ function _globstar!(matches, i::Int, gm::GlobMatch)
             if isempty(paths)
                 isempty(components) || pop!(components)
             else
-                path = popfirst!(paths)
+                pathcomp = popfirst!(paths)
                 push!(workqueue, paths)
-                push!(components, path)
-                path = joinpath(prefix, components...)
+                push!(components, pathcomp)
+                # Build relative path (for results) and filesystem path (for isdir/readdir)
+                newrelpath = joinpath(relpath, components...)
+                fspath = joinpath(prefix, newrelpath)
 
                 # If directory, add contents to workqueue for further exploration
-                if isdir(path)
-                    push!(workqueue, readdir(path))
+                if isdir(fspath)
+                    push!(workqueue, _readdir(fspath; sort=sort))
                     push!(components, "")
                 end
 
                 # Check if this path matches remaining pattern
                 if occursin_sub(gm, i, components)
-                    push!(results, path)
+                    push!(results, newrelpath)
                 end
 
                 pop!(components)
@@ -712,14 +726,23 @@ function _globstar!(matches, i::Int, gm::GlobMatch)
     return results
 end
 
-function _glob!(matches, pat::AbstractString)
+@static if VERSION >= v"1.4"
+    _readdir(; sort::Bool) = Base.readdir(; sort=sort)
+    _readdir(dir; sort::Bool) = Base.readdir(dir; sort=sort)
+else
+    _readdir(; sort::Bool) = Base.readdir()
+    _readdir(dir; sort::Bool) = Base.readdir(dir)
+end
+
+function _glob!(prefix::AbstractString, matches, pat::AbstractString, sort::Bool)
     i = j = k = firstindex(matches)
     last = lastindex(matches)
     while i <= last
-        path = joinpath(matches[i], pat)
+        relpath = joinpath(matches[i], pat)
+        fspath = joinpath(prefix, relpath)
         i += 1
-        if ispath(path)
-            matches[j] = path
+        if ispath(fspath)
+            matches[j] = relpath
             j += 1
         end
     end
@@ -727,17 +750,18 @@ function _glob!(matches, pat::AbstractString)
     return matches
 end
 
-function _glob!(matches, pat)
+function _glob!(prefix::AbstractString, matches, pat, sort::Bool)
     m2 = empty(matches)
     for m in matches
-        if isempty(m)
-            for d in readdir()
+        fspath = isempty(m) ? prefix : joinpath(prefix, m)
+        if isempty(fspath)
+            for d in _readdir(; sort=sort)
                 if occursin(pat, d)
                     push!(m2, d)
                 end
             end
-        elseif isdir(m)
-            for d in readdir(m)
+        elseif isdir(fspath)
+            for d in _readdir(fspath; sort=sort)
                 if occursin(pat, d)
                     push!(m2, joinpath(m, d))
                 end
