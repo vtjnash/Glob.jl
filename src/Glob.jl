@@ -2,9 +2,18 @@ __precompile__()
 
 module Glob
 
-import Base: readdir, show, occursin
+import Base: readdir, show, occursin, filter, filter!
 
 export glob, @fn_str, @fn_mstr, @glob_str, @glob_mstr
+
+if VERSION >= v"1.11"
+    Base.include_string(Glob,
+        """
+        public FilenameMatch, GlobMatch, GlobStar
+        public CASELESS, PERIOD, NOESCAPE, PATHNAME, EXTENDED
+        """,
+        @__FILE__)
+end
 
 @static if VERSION < v"1.7"
 macro something(args...)
@@ -26,11 +35,11 @@ macro something(args...)
 end
 end
 
-const CASELESS = 1 << 0 # i -- Do case-insensitive matching
-const PERIOD   = 1 << 1 # p -- A leading period (.) character must be exactly matched by a period (.) character
-const NOESCAPE = 1 << 2 # e -- Do not treat backslash (\) as a special character
-const PATHNAME = 1 << 3 # d -- Slash (/) character must be exactly matched by a slash (/) character
-const EXTENDED = 1 << 4 # x -- Support extended (bash-like) features
+const CASELESS = UInt32(1 << 0) # i -- Do case-insensitive matching
+const PERIOD   = UInt32(1 << 1) # p -- A leading period (.) character must be exactly matched by a period (.) character
+const NOESCAPE = UInt32(1 << 2) # e -- Do not treat backslash (\) as a special character
+const PATHNAME = UInt32(1 << 3) # d -- Slash (/) character must be exactly matched by a slash (/) character
+const EXTENDED = UInt32(1 << 4) # x -- Support extended (bash-like) features
 
 struct FilenameMatch{S<:AbstractString}
     pattern::S
@@ -65,6 +74,8 @@ Returns a `Glob.FilenameMatch` object, which can be used with `occursin()`. Avai
 * `x` = `EXTENDED` : Additional features borrowed from newer shells, such as `bash` and `tcsh`
     * Backslash (`\``) characters in `[]` groups escape the next character
 """
+(macro fn_str end, macro fn_mstr end, FilenameMatch)
+
 macro fn_str(pattern, flags...) FilenameMatch(pattern, flags...) end
 macro fn_mstr(pattern, flags...) FilenameMatch(pattern, flags...) end
 
@@ -413,6 +424,8 @@ end
 
 Returns a `Glob.GlobMatch` object, which can be used with `glob()` or `readdir()`.
 """
+(macro glob_str end, macro glob_mstr end, GlobMatch)
+
 macro glob_str(pattern) GlobMatch(pattern) end
 macro glob_mstr(pattern) GlobMatch(pattern) end
 
