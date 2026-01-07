@@ -495,19 +495,17 @@ function glob(pattern, prefix="")
 end
 
 function _glob!(matches, pat::AbstractString)
-    i = 1
-    last = length(matches)
+    i = j = k = firstindex(matches)
+    last = lastindex(matches)
     while i <= last
         path = joinpath(matches[i], pat)
+        i += 1
         if ispath(path)
-            matches[i] = path
-            i += 1
-        else
-            matches[i] = matches[last]
-            last -= 1
+            matches[j] = path
+            j += 1
         end
     end
-    resize!(matches, last)
+    resize!(matches, j - k)
     return matches
 end
 
