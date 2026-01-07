@@ -78,6 +78,15 @@ function show(io::IO, fn::FilenameMatch)
     nothing
 end
 
+function skip_to_slash(s::AbstractString, i)
+    while true
+        nc = iterate(s, i)
+        nc === nothing && return nothing
+        c, i = nc
+        c == '/' && return i
+    end
+end
+
 function occursin(fn::FilenameMatch, s::AbstractString)
     pattern = fn.pattern
     caseless = (fn.options & CASELESS) != 0
@@ -92,7 +101,6 @@ function occursin(fn::FilenameMatch, s::AbstractString)
     star = 0
     globstarmatch = 0  # Track globstar match position for directory-level backtracking
     globstar_mi = 0    # Pattern index after globstar
-    globstar_period = false  # Track if period was encountered during globstar
     globstar_star = 0  # Saved star state when entering globstar
     globstar_starmatch = i  # Saved starmatch state when entering globstar
     period = periodfl
@@ -113,18 +121,26 @@ function occursin(fn::FilenameMatch, s::AbstractString)
                 if pathname && after_slash
                     peek1_c, peek1_s = @something iterate(pattern, mi) @goto no_globstar
                     if peek1_c == '*'
-                        peek2_c, peek2_s = @something iterate(pattern, peek1_s) return true # this is trailing_globstar
+                        peek2_c, peek2_s = @something iterate(pattern, peek1_s) begin
+                            # this is trailing_globstar - but check for dotfiles if PERIOD flag set
+                            if period
+                                j = skip_to_slash(s, i)
+                                while j !== nothing
+                                    peek3_c, j = @something iterate(s, j) break
+                                    peek3_c == '.' && return false
+                                    j == '/' || (j = skip_to_slash(s, j))
+                                end
+                            end
+                            return true
+                        end
                         if peek2_c == '/'
-                            # This is **/ globstar pattern - use directory-level backtracking
                             mi = peek2_s  # Skip past **/
+                            # This is **/ globstar pattern - use directory-level backtracking
                             globstarmatch = i
                             globstar_mi = mi
                             # Save current star state for restoration on globstar backtrack
                             globstar_star = star
                             globstar_starmatch = starmatch
-                            after_slash = true  # After **/, we're effectively after a /
-                            c = '/'  # Fake previous character as /
-                            match = true
                             continue
                         end
                     end
@@ -134,7 +150,7 @@ function occursin(fn::FilenameMatch, s::AbstractString)
                 # Even if it's **, each * will be processed separately
                 starmatch = i # backup the current search index
                 star = mi
-                c, _ = matchnext # peek-ahead
+                c, _ = matchnext # peek at the next character, but don't match it yet
                 if period & (c == '.')
                     return false # * does not match leading .
                 end
@@ -167,14 +183,11 @@ function occursin(fn::FilenameMatch, s::AbstractString)
                     end
                     match = ((c == mc) || (caseless && uppercase(c)==uppercase(mc)))
                 end
-                # Track if we're matching a . during globstar
-                if globstarmatch > 0 && period && (c == '.')
-                    globstar_period = true
-                end
                 # Update after_slash for next iteration (track if pattern char was '/')
                 after_slash = (mc == '/')
                 if match && after_slash && pathname
-                    # in pathname mode, once matching a / explicitly, backtracking to starmatch will not be necessary
+                    # in pathname mode, once encountering a / explicitly,
+                    # backtracking to starmatch will only be useful if we haven't matched anything after it
                     star = 0
                 end
             end
@@ -191,27 +204,42 @@ function occursin(fn::FilenameMatch, s::AbstractString)
             end
             # Then try **/ backtracking
             if globstarmatch > 0
-                nextslash = findnext(==('/'), s, globstarmatch)
-                if nextslash !== nothing && !globstar_period
-                    i = nextind(s, nextslash)
-                    globstarmatch = i
-                    mi = globstar_mi
-                    star = globstar_star
-                    starmatch = globstar_starmatch
-                    period = periodfl
-                    continue
+                mi = globstar_mi
+                star = globstar_star
+                starmatch = globstar_starmatch
+                period = periodfl
+                after_slash = true
+                if period
+                    c, _ = @something iterate(s, globstarmatch) break
+                    if c == '.'
+                        return false
+                    end
                 end
-                globstarmatch = 0
+                nextslash = skip_to_slash(s, globstarmatch)
+                nextslash === nothing && break
+                globstarmatch = nextslash
+                i = nextslash
+                continue
             end
             return false
         end
         period = (periodfl & pathname & (c == '/'))
     end
-    while true # allow trailing *'s and **'s
+    while true # allow trailing *'s, **'s, and (if preceded by /) **/'s
         patnext = iterate(pattern, mi)
         patnext === nothing && break
         mc, mi = patnext
         mc == '*' || return false # pattern characters left to match, but no string left
+        if after_slash
+            patnext = iterate(pattern, mi)
+            patnext === nothing && break
+            mc, mi = patnext
+            mc == '*' || return false # pattern characters left to match, but no string left
+            patnext = iterate(pattern, mi)
+            patnext === nothing && break
+            mc, mi = patnext
+            mc == '*' || mc == '/' || return false # pattern characters left to match, but no string left
+        end
     end
     return true
 end
