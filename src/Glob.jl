@@ -56,7 +56,7 @@ end
 """
     fn"pattern"ipedx
 
-Returns a `Glob.FilenameMatch` object, which can be used with `ismatch()` or `occursin()`. Available flags are:
+Returns a `Glob.FilenameMatch` object, which can be used with `occursin()`. Available flags are:
 
 * `i` = `CASELESS` : Performs case-insensitive matching
 * `p` = `PERIOD` : A leading period (`.`) character must be exactly matched by a period (`.`) character (not a `?`, `*`, or `[]`). A leading period is a period at the beginning of a string, or a period after a slash if PATHNAME is true.
@@ -428,8 +428,13 @@ function GlobMatch(pattern::AbstractString)
     pat = split(pattern, '/')
     glob = Vector{Any}(undef, length(pat))
     extended = false
-    for i = 1:length(pat)
+    for i in eachindex(pat)
         p = pat[i]
+        # Check for ** pattern
+        if p == "**"
+            glob[i] = GlobStar()
+            continue
+        end
         next = iterate(p)
         ispattern = false
         while next !== nothing
@@ -457,7 +462,7 @@ end
 
 function show(io::IO, gm::GlobMatch)
     for pat in gm.pattern
-        if !isa(pat, AbstractString) && !isa(pat, FilenameMatch)
+        if !isa(pat, AbstractString) && !isa(pat, FilenameMatch) && !isa(pat, GlobStar)
             print(io, "Glob.GlobMatch(")
             show(io, gm.pattern)
             print(io, ')')
@@ -471,11 +476,123 @@ function show(io::IO, gm::GlobMatch)
         notfirst = true
         if isa(pat, FilenameMatch)
             print(io, pat.pattern)
+        elseif isa(pat, GlobStar)
+            print(io, "**")
         else
             print(io, pat)
         end
     end
     print(io, '"')
+end
+
+"""
+    GlobStar()
+
+A singleton pattern that matches any file/directory name except `.*`,
+and can also match zero or more subsequent entries when used with `occursin(::GlobMatch, ::AbstractVector)`.
+
+When matching against arrays, `GlobStar()` acts as a multi-level wildcard, similar to
+`**/` in pathname glob patterns without the `PERIOD` flag set.
+
+!!! note
+    A trailing `/` in a glob pattern (e.g., `glob"**/"`) parses to `[GlobStar(), ""]`.
+    This differs from `splitpath` (which omits trailing empty strings) but agrees with
+    `joinpath(splitdir("**/")...)` behavior. When matching arrays, include an empty
+    string at the end to match patterns with trailing slashes.
+
+# Example
+```julia
+gm = GlobMatch(["src", GlobStar(), fn"*.jl"])
+occursin(gm, ["src", "foo.jl"])           # true - GlobStar matches zero elements
+occursin(gm, ["src", "a", "foo.jl"])      # true - GlobStar matches "a"
+occursin(gm, ["src", "a", "b", "foo.jl"]) # true - GlobStar matches "a", "b"
+occursin(gm, ["src", ".a", "foo.jl"])     # false - GlobStar does not match ".a"
+```
+"""
+struct GlobStar end
+occursin(::GlobStar, s::AbstractString) = !startswith(s, '.')
+
+"""
+    occursin(gm::GlobMatch, arr::AbstractVector)
+
+Test whether a `GlobMatch` pattern matches an array of path components (strings).
+
+Each element of the pattern is matched against the corresponding element of the array:
+- `AbstractString` patterns require exact equality.
+- `FilenameMatch` patterns use `occursin` for matching.
+- `GlobStar()` matches any single element (except a leading `.`),
+   and can also consume zero or more additional elements.
+
+Returns `true` if the entire pattern matches the entire array.
+
+# Examples
+```julia
+gm = glob"src/*/test.jl"
+occursin(gm, ["src", "foo", "test.jl"])  # true
+occursin(gm, ["src", "bar", "test.jl"])  # true
+occursin(gm, ["src", "test.jl"])         # false - wrong length
+
+gm = GlobMatch(["src", GlobStar(), fn"*.jl"])
+occursin(gm, ["src", "foo.jl"])           # true
+occursin(gm, ["src", "a", "b", "foo.jl"]) # true
+```
+"""
+function occursin(gm::GlobMatch, arr::AbstractVector)
+    pattern = gm.pattern
+    pi = firstindex(pattern)
+    ai = firstindex(arr)
+    # Track the most recent GlobStar ** for backtracking
+    globstar_pi = 0 # Pattern index after the GlobStar
+    globstar_ai = 0 # Array index to resume from on backtrack
+    while true
+        if pi > lastindex(pattern)
+            # Pattern exhausted; check if array is also exhausted
+            if ai > lastindex(arr)
+                return true
+            end
+            # Array has remaining elements - try backtracking
+        else
+            pat = pattern[pi]
+            pi += 1
+            if pat isa GlobStar
+                # Save restart point for backtracking (only most recent matters)
+                globstar_pi = pi
+                globstar_ai = ai  # Start by matching zero elements
+                if pi > lastindex(pattern)
+                    # Quick exit for patterns ending in ** - but check no dotfiles remain
+                    for j in ai:lastindex(arr)
+                        startswith(arr[j], '.') && return false
+                    end
+                    return true
+                end
+                continue
+            end
+            # Regular pattern: must have a corresponding array element
+            if ai <= lastindex(arr)
+                arr_ai = arr[ai]
+                ai += 1
+                matched = if pat isa FilenameMatch
+                        occursin(pat, arr_ai)
+                    elseif pat isa AbstractString
+                        pat == arr_ai
+                    else
+                        # For other types that support occursin (e.g., Regex)
+                        occursin(pat, arr_ai)
+                    end
+                if matched
+                    continue
+                end
+            end
+        end
+        # Try consuming one more element with the most recent **
+        if globstar_pi > 0 && globstar_ai <= lastindex(arr) && !startswith(arr[globstar_ai], '.')
+            globstar_ai += 1
+            ai = globstar_ai
+            pi = globstar_pi
+            continue
+        end
+        return false
+    end
 end
 
 """

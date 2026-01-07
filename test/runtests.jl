@@ -297,3 +297,140 @@ test_string("""fn"base/*/a/[b]\"""")
 
 @test_throws ErrorException Glob.GlobMatch("")
 @test_throws ErrorException Glob.GlobMatch("/a/b/c")
+
+@testset "occursin(GlobMatch, Array)" begin
+    # Basic string matching
+    @test occursin(glob"src/foo/test.jl", ["src", "foo", "test.jl"])
+    @test !occursin(glob"src/foo/test.jl", ["src", "bar", "test.jl"])  # mismatch
+    @test !occursin(glob"src/foo/test.jl", ["src", "foo"])  # too short
+    @test !occursin(glob"src/foo/test.jl", ["src", "foo", "test.jl", "extra"])  # too long
+    @test !occursin(glob"src/foo", String[])  # empty array
+
+    # FilenameMatch patterns
+    @test occursin(glob"src/*.jl", ["src", "foo.jl"])
+    @test !occursin(glob"src/*.jl", ["src", "foo.txt"])
+
+    # Regex patterns
+    @test occursin(Glob.GlobMatch([r"^src$", fn"*.jl"]), ["src", "test.jl"])
+    @test !occursin(Glob.GlobMatch([r"^src$", fn"*.jl"]), ["SRC", "test.jl"])
+end
+
+@testset "GlobStar type" begin
+    # occursin returns true for non-dotfiles
+    @test occursin(Glob.GlobStar(), "anything")
+    @test occursin(Glob.GlobStar(), "")
+
+    # occursin returns false for dotfiles
+    @test !occursin(Glob.GlobStar(), ".hidden")
+    @test !occursin(Glob.GlobStar(), ".git")
+    @test !occursin(Glob.GlobStar(), ".")
+    @test !occursin(Glob.GlobStar(), "..")
+
+    # show method
+    @test endswith(string(Glob.GlobStar()), "GlobStar()")
+end
+
+@testset "GlobMatch ** parsing" begin
+    # ** in middle becomes GlobStar
+    gm = glob"src/**/test.jl"
+    @test gm.pattern[2] isa Glob.GlobStar
+    @test gm.pattern[3] == "test.jl"  # no wildcards = string literal
+
+    # ** with wildcard
+    gm2 = glob"src/**/*.jl"
+    @test gm2.pattern[2] isa Glob.GlobStar
+    @test gm2.pattern[3] isa Glob.FilenameMatch
+
+    # ** at start and end
+    gm3 = glob"**/src/**"
+    @test gm3.pattern[1] isa Glob.GlobStar
+    @test gm3.pattern[3] isa Glob.GlobStar
+
+    # Trailing slash: **/ parses to [GlobStar(), ""]
+    # This differs from splitpath but agrees with joinpath(splitdir("**/")...)
+    gm_trail = glob"**/"
+    @test length(gm_trail.pattern) == 2
+    @test gm_trail.pattern[1] isa Glob.GlobStar
+    @test gm_trail.pattern[2] == ""
+    @test occursin(gm_trail, ["src", ""])              # matches with trailing empty
+    @test !occursin(gm_trail, ["src"])                 # no trailing empty = no match
+
+    # show roundtrip
+    @test string(glob"src/**/*.jl") == "glob\"src/**/*.jl\""
+end
+
+@testset "match with GlobStar" begin
+    # GlobStar matching zero/one/many elements (middle position)
+    gm = glob"src/**/*.jl"
+    @test occursin(gm, ["src", "foo.jl"])                    # zero
+    @test occursin(gm, ["src", "a", "foo.jl"])               # one
+    @test occursin(gm, ["src", "a", "b", "c", "foo.jl"])     # many
+    @test !occursin(gm, ["src", "foo.txt"])                  # pattern mismatch
+    @test !occursin(gm, ["other", "foo.jl"])                 # prefix mismatch
+
+    # GlobStar at end
+    gm_end = glob"src/**"
+    @test occursin(gm_end, ["src"])                          # zero
+    @test occursin(gm_end, ["src", "a", "b", "c"])           # many
+
+    # GlobStar at beginning
+    gm_start = glob"**/*.jl"
+    @test occursin(gm_start, ["foo.jl"])                     # zero
+    @test occursin(gm_start, ["a", "b", "foo.jl"])           # many
+    @test !occursin(gm_start, ["foo.txt"])                   # pattern mismatch
+
+    # Multiple GlobStars (only last matters for backtracking)
+    gm_multi = glob"**/middle/**"
+    @test occursin(gm_multi, ["middle"])                     # both zero
+    @test occursin(gm_multi, ["a", "middle"])                # first consumes, second zero
+    @test occursin(gm_multi, ["middle", "b"])                # first zero, second consumes
+    @test occursin(gm_multi, ["a", "b", "middle", "c", "d"]) # both consume
+    @test !occursin(gm_multi, ["no_middle_here"])
+
+    # Backtracking: pattern after GlobStar appears multiple times
+    gm_bt = glob"**/b/c"
+    @test occursin(gm_bt, ["b", "c"])                        # zero - first occurrence
+    @test occursin(gm_bt, ["x", "b", "c"])                   # one element before
+    @test occursin(gm_bt, ["b", "x", "b", "c"])              # must skip first "b", find second
+    @test occursin(gm_bt, ["a", "b", "b", "c"])              # "b" appears twice, use second
+    @test !occursin(gm_bt, ["b", "c", "x"])                  # pattern must match at end
+    @test !occursin(gm_bt, ["b", "x"])                       # no "c" after "b"
+
+    # Backtracking: longer pattern after GlobStar
+    gm_bt2 = glob"**/a/b/c"
+    @test occursin(gm_bt2, ["a", "b", "c"])                  # exact match, zero consumed
+    @test occursin(gm_bt2, ["a", "b", "a", "b", "c"])        # must backtrack past first "a","b"
+    @test occursin(gm_bt2, ["a", "a", "b", "c"])             # backtrack past first "a"
+    @test !occursin(gm_bt2, ["a", "b", "c", "d"])            # extra element at end
+
+    # Two GlobStars: first must not consume too much
+    gm_two = glob"**/c/**/end"
+    @test occursin(gm_two, ["c", "end"])                     # both zero
+    @test occursin(gm_two, ["a", "c", "end"])                # first consumes "a"
+    @test occursin(gm_two, ["c", "x", "end"])                # second consumes "x"
+    @test occursin(gm_two, ["a", "c", "x", "end"])           # both consume one
+    @test occursin(gm_two, ["a", "c", "c", "end"])           # first GlobStar stops at first "c"
+    @test occursin(gm_two, ["c", "c", "end"])                # tricky: first "c" is literal, second consumed by GlobStar
+    @test !occursin(gm_two, ["c", "x"])                      # missing "end"
+    @test !occursin(gm_two, ["a", "b", "end"])               # missing "c"
+
+    # Only GlobStar (matches anything including empty, but not dotfiles)
+    gm_only = glob"**"
+    @test occursin(gm_only, String[])
+    @test occursin(gm_only, ["a", "b", "c"])
+    @test !occursin(gm_only, [".hidden"])
+    @test !occursin(gm_only, ["a", ".hidden", "b"])
+
+    # GlobStar skips dotfiles during backtracking
+    gm_dot = glob"**/test.jl"
+    @test occursin(gm_dot, ["test.jl"])
+    @test occursin(gm_dot, ["src", "test.jl"])
+    @test !occursin(gm_dot, [".git", "test.jl"])        # .git blocks GlobStar
+    @test !occursin(gm_dot, ["src", ".hidden", "test.jl"])  # .hidden blocks GlobStar
+
+    # Dotfiles can still be matched explicitly
+    gm_explicit = Glob.GlobMatch([Glob.GlobStar(), ".git", "config"])
+    @test occursin(gm_explicit, [".git", "config"])     # GlobStar matches zero, .git matched literally
+    @test occursin(gm_explicit, ["a", ".git", "config"])
+    @test !occursin(gm_explicit, [".other", ".git", "config"])  # .other blocks GlobStar
+end
