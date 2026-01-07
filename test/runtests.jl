@@ -252,6 +252,18 @@ end
     @test occursin(fn"a/**/b"d, "a/x/y/z/b")
     @test !occursin(fn"a/**/b"d, "a/b/c")
     @test !occursin(fn"a/**/b"d, "x/a/b")
+
+    # Dotfile patterns with **/ and PERIOD flag
+    @test !occursin(fn".a/**/"xpd, ".a/.b/.c/")
+    @test occursin(fn".a/**/"xd, ".a/.b/.c/")
+    @test occursin(fn".a/**/.d"xdp, ".a/b/.d")
+    @test occursin(fn".a/**/.d"xdp, ".a/b/.d")
+
+    # Trailing ** patterns
+    @test occursin(fn".a/**/**"pdx, ".a/")
+    @test occursin(fn".a/**/**/"pdx, ".a/")
+    @test !occursin(fn".a/**/**"pdx, ".a")
+    @test occursin(fn"**/**/**/"pdx, "")
 end
 
 @test_types glob"ab/?/d".pattern (AbstractString, Glob.FilenameMatch, AbstractString)
