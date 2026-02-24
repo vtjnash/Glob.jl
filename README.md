@@ -14,9 +14,11 @@ This implementation of Glob is based on the IEEE Std 1003.1, 2004 Edition (Open 
 
 Glob is implemented to have both a functional form and an object-oriented form. There is no "correct" choice; you are encouraged to pick whichever is better suited to your application.
 
-* `glob(pattern, [directory::AbstractString])` ::
+* `glob(pattern, [directory::AbstractString]; join::Bool=true, sort::Bool=true)` ::
   * Returns a list of all files matching `pattern` in `directory`.
   * If directory is not specified, it defaults to the current working directory.
+  * If `join` is `true` (default), the results are joined with the directory path. If `false`, only the matched paths relative to the directory are returned.
+  * If `sort` is `true` (default), the results are sorted lexicographically.
   * Pattern can be any of:
     1. A `Glob.GlobMatch` object:
 
@@ -37,7 +39,7 @@ Glob is implemented to have both a functional form and an object-oriented form. 
 
     5. Attempting to creat a GlobMatch object from a string with a leading `/` or the empty string is an error
 
-* `readdir(pattern::GlobMatch, [directory::AbstractString])` ::
+* `readdir(pattern::GlobMatch, [directory::AbstractString]; join::Bool=true, sort::Bool=true)` ::
   * alias for `glob()`
 
 * `glob"pattern"` ::

@@ -286,6 +286,15 @@ cd(root) do
         @test glob([r".*"]) == readdir()
         @test glob([".", r".*"]) == map(x->joinpath(".", x), readdir())
         @test all([!startswith(x, '.') for x in Glob.glob("*.*")])
+        # Empty prefix: join=true and join=false should be equivalent
+        @test glob("src/*.jl"; join=true) == glob("src/*.jl"; join=false)
+
+        # join=false returns paths relative to prefix
+        @test glob("*.jl", joinpath(root, "src"); join=false) == ["Glob.jl"]
+        @test glob("src/*.jl"; join=true) ==
+              glob("src/*.jl"; join=false) ==
+              glob("src/*.jl", root; join=false) ==
+              [joinpath("src", "Glob.jl")]
     end
 end
 
@@ -312,7 +321,13 @@ end
     cd(root) do
         @test glob("**/*.jl") == [joinpath("src", "Glob.jl"), joinpath("test", "runtests.jl")]
         @test glob("**/") == ["src", "test"]
+        @test glob("**/*.jl"; join=true) == glob("**/*.jl"; join=false)
     end
+
+    # join=false returns paths relative to prefix
+    @test glob("**/*.jl", root; join=false) == [joinpath("src", "Glob.jl"), joinpath("test", "runtests.jl")]
+    @test glob("src/**", root; join=false) == ["src", joinpath("src", "Glob.jl")]
+    @test glob("**/", root; join=false) == ["", "src", "test"]
 end
 
 function test_string(x1)
