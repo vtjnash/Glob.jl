@@ -2,7 +2,7 @@ __precompile__()
 
 module Glob
 
-import Base: readdir, show, occursin, filter, filter!
+import Base: readdir, show, occursin
 
 export glob, @fn_str, @fn_mstr, @glob_str, @glob_mstr
 
@@ -261,13 +261,6 @@ function occursin(fn::FilenameMatch, s::AbstractString)
     end
     return true
 end
-
-@deprecate ismatch(fn::FilenameMatch, s::AbstractString) occursin(fn, s)
-
-filter!(fn::FilenameMatch, v) = filter!(x -> occursin(fn, x), v)
-filter(fn::FilenameMatch, v)  = filter(x -> occursin(fn, x), v)
-filter!(fn::FilenameMatch, d::Dict) = filter!(((k, _),) -> occursin(fn, k), d)
-filter(fn::FilenameMatch, d::Dict) = filter!(fn, copy(d))
 
 function _match_bracket(pat::AbstractString, mc::Char, i, cl::Char, cu::Char) # returns (mc, i, valid, match)
     next = iterate(pat, i)
