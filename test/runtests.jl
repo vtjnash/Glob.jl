@@ -320,28 +320,41 @@ end
 
     # Basic ** matches everything
     all_files = glob("**", root)
-    @test root in all_files
+    @test !(root in all_files)
     @test joinpath(root, "src") in all_files
     @test joinpath(root, "test") in all_files
     @test joinpath(root, "README.md") in all_files
 
     # Basic **/ matches folders
-    @test glob("**/", root) == [root, joinpath(root, "src"), joinpath(root, "test")]
-    @test glob("**/**/**/", root) == [root, joinpath(root, "src"), joinpath(root, "test")]
+    @test glob("**/", root) == [joinpath(root, "src", ""), joinpath(root, "test", "")]
+    @test glob("**/**/**/", root) == [joinpath(root, "src", ""), joinpath(root, "test", "")]
     @test glob("src/**/**", root) == [joinpath(root, "src"), joinpath(root, "src", "Glob.jl")]
-    @test glob("src/**/**/", root) == [joinpath(root, "src")]
+    @test glob("src/**/**/", root) == [joinpath(root, "src", "")]
 
     # ** in current directory
     cd(root) do
         @test glob("**/*.jl") == [joinpath("src", "Glob.jl"), joinpath("test", "runtests.jl")]
-        @test glob("**/") == ["src", "test"]
+        @test glob("**/") == [joinpath("src", ""), joinpath("test", "")]
         @test glob("**/*.jl"; join=true) == glob("**/*.jl"; join=false)
+        local all_files = glob("**")
+        @test !(root in all_files)
+        @test !("/" in all_files)
+        @test !("" in all_files)
+        @test "src" in all_files
+        @test joinpath("src", "Glob.jl") in all_files
+        @test "test" in all_files
+        @test "README.md" in all_files
     end
 
     # join=false returns paths relative to prefix
     @test glob("**/*.jl", root; join=false) == [joinpath("src", "Glob.jl"), joinpath("test", "runtests.jl")]
     @test glob("src/**", root; join=false) == ["src", joinpath("src", "Glob.jl")]
-    @test glob("**/", root; join=false) == ["", "src", "test"]
+    @test glob("**/", root; join=false) == [joinpath("src", ""), joinpath("test", "")]
+    @test glob("**/src", root; join=false) == ["src"]
+    @test glob("**/src/", root; join=false) == [joinpath("src", "")]
+    @test glob("**/src/*", root; join=false) == [joinpath("src", "Glob.jl")]
+    @test glob("**/src/**", root; join=false) == ["src", joinpath("src", "Glob.jl")]
+    @test glob("**/src/**/", root; join=false) == [joinpath("src", "")]
 end
 
 function test_string(x1)

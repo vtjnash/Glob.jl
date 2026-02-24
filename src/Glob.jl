@@ -543,6 +543,9 @@ Each element of the pattern is matched against the corresponding element of the 
 
 Returns `true` if the entire pattern matches the entire array.
 
+The pattern and array should both end with the empty pattern and element,
+respectively, to be equivalent to glob only matching directories.
+
 # Examples
 ```julia
 gm = glob"src/*/test.jl"
@@ -555,7 +558,10 @@ occursin(gm, ["src", "foo.jl"])           # true
 occursin(gm, ["src", "a", "b", "foo.jl"]) # true
 ```
 """
-occursin(gm::GlobMatch, arr::AbstractVector) = occursin_sub(gm, firstindex(gm.pattern), arr)
+occursin(gm::GlobMatch, arr::AbstractVector) = occursin_sub(gm, firstindex(gm.pattern), arr) === true
+
+# helper for occursin to let `globstar!` below to start at a specific index
+# return true/false/isdir for matches always/never/only-if-isdir
 function occursin_sub(gm::GlobMatch, pi::Int, arr::AbstractVector)
     pattern = gm.pattern
     ai = firstindex(arr)
@@ -586,21 +592,32 @@ function occursin_sub(gm::GlobMatch, pi::Int, arr::AbstractVector)
                 continue
             end
             # Regular pattern: must have a corresponding array element
+            # or be a dir matching a final empty pattern
             if ai <= lastindex(arr)
                 arr_ai = arr[ai]
                 ai += 1
-                matched = if pat isa FilenameMatch
-                        occursin(pat, arr_ai)
-                    elseif pat isa AbstractString
-                        pat == arr_ai
-                    else
-                        # For other types that support occursin (e.g., Regex)
-                        occursin(pat, arr_ai)
-                    end
-                if matched
-                    continue
-                end
+                finaldir = false
+            elseif pi > lastindex(pattern)
+                arr_ai = ""
+                finaldir = true
+            else
+                @goto no_element
             end
+            matched = if pat isa FilenameMatch
+                    occursin(pat, arr_ai)
+                elseif pat isa AbstractString
+                    pat == arr_ai
+                else
+                    # For other types that support occursin (e.g., Regex)
+                    occursin(pat, arr_ai)
+                end
+            if matched
+                if finaldir
+                    return isdir
+                end
+                continue
+            end
+            @label no_element
         end
         # Try consuming one more element with the most recent **
         if globstar_pi > 0 && globstar_ai <= lastindex(arr) && !startswith(arr[globstar_ai], '.')
@@ -626,6 +643,7 @@ readdir(pattern::GlobMatch, prefix=""; join::Bool=true, sort::Bool=true) = glob(
 Returns a list of all files matching `pattern` in `directory`.
 
 * If directory is not specified, it defaults to the current working directory.
+* Never returns `directory`, even if it would match.
 * If `join` is `true` (default), the results are joined with the directory path. If `false`, only the matched paths relative to the directory are returned.
 * If `sort` is `true` (default), the results are sorted lexicographically.
 * Pattern can be any of:
@@ -644,7 +662,8 @@ Returns a list of all files matching `pattern` in `directory`.
         * Each element of the vector will be used to match another level in the file hierarchy
         * no conversion of strings to `Glob.FilenameMatch` objects or directory splitting on `/` will occur.
 
-A trailing `/` (or equivalently, a trailing empty string in the vector) will cause glob to only match directories.
+A trailing `/` (or equivalently, a trailing empty string in the vector) will cause glob to only match directories,
+and will be returned in the results if it was required to be matched explicitly.
 
 Attempting to use a pattern with a leading `/` or the empty string is an error; use the `directory` argument to specify the absolute path to the directory in such a case.
 """
@@ -688,23 +707,25 @@ function _globstar!(prefix::AbstractString, matches, i::Int, gm::GlobMatch, sort
         if isempty(fspath)
             push!(workqueue, _readdir(; sort=sort))
         else
-            if isdir(fspath)
-                push!(workqueue, _readdir(fspath; sort=sort))
-                push!(components, "")
-            end
+            finaldir = isdir(fspath)
+            finaldir && push!(workqueue, _readdir(fspath; sort=sort))
 
             # GlobStar can match zero elements - check relpath itself
-            if occursin_sub(gm, i, components)
-                push!(results, relpath)
+            # But never include the potential trivial match of the root
+            if !isempty(relpath)
+                ismatch = occursin_sub(gm, i, components)
+                if ismatch === true
+                    push!(results, relpath)
+                elseif finaldir && ismatch === isdir
+                    push!(results, joinpath(relpath, ""))
+                end
             end
-
-            isempty(components) || pop!(components)
         end
 
         while !isempty(workqueue)
             paths = pop!(workqueue)
             if isempty(paths)
-                isempty(components) || pop!(components)
+                !isempty(components) ? pop!(components) : @assert isempty(workqueue)
             else
                 pathcomp = popfirst!(paths)
                 push!(workqueue, paths)
@@ -714,17 +735,17 @@ function _globstar!(prefix::AbstractString, matches, i::Int, gm::GlobMatch, sort
                 fspath = joinpath(prefix, newrelpath)
 
                 # If directory, add contents to workqueue for further exploration
-                if isdir(fspath)
-                    push!(workqueue, _readdir(fspath; sort=sort))
-                    push!(components, "")
-                end
+                finaldir = isdir(fspath)
+                finaldir && push!(workqueue, _readdir(fspath; sort=sort))
 
-                # Check if this path matches remaining pattern
-                if occursin_sub(gm, i, components)
+                ismatch = occursin_sub(gm, i, components)
+                if ismatch === true
                     push!(results, newrelpath)
+                elseif finaldir && ismatch === isdir
+                    push!(results, joinpath(newrelpath, ""))
                 end
 
-                pop!(components)
+                finaldir || pop!(components)
             end
         end
     end

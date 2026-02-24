@@ -16,6 +16,7 @@ Glob is implemented to have both a functional form and an object-oriented form. 
 
 * `glob(pattern, [directory::AbstractString]; join::Bool=true, sort::Bool=true)` ::
   * Returns a list of all files matching `pattern` in `directory`.
+  * Never returns `directory`, even if it would match.
   * If directory is not specified, it defaults to the current working directory.
   * If `join` is `true` (default), the results are joined with the directory path. If `false`, only the matched paths relative to the directory are returned.
   * If `sort` is `true` (default), the results are sorted lexicographically.
@@ -35,9 +36,10 @@ Glob is implemented to have both a functional form and an object-oriented form. 
         * Each element of the vector will be used to match another level in the file hierarchy
         * no conversion of strings to `Glob.FilenameMatch` objects or directory splitting on `/` will occur.
 
-    4. A trailing `/` (or equivalently, a trailing empty string in the vector) will cause glob to only match directories
+    4. A trailing `/` (or equivalently, a trailing empty string in the vector) will cause glob to only match directories,
+       and will be returned in the results if it was required to be matched explicitly.
 
-    5. Attempting to creat a GlobMatch object from a string with a leading `/` or the empty string is an error
+    5. Attempting to create a GlobMatch object from a string with a leading `/` or the empty string is an error.
 
 * `readdir(pattern::GlobMatch, [directory::AbstractString]; join::Bool=true, sort::Bool=true)` ::
   * alias for `glob()`
@@ -61,10 +63,10 @@ When the `PATHNAME` flag (`d`) is enabled, `**/` is treated as a **globstar** pa
 Notes:
 - `**/` matches zero or more directories, including none (e.g., `a/**/b` matches both `a/b` and `a/x/y/b`)
 - `**` at the end of a pattern matches everything remaining, including zero remaining components (e.g. `a/**` matches `a/`)
-- `**` not followed by `/` is treated as a regular `*` wildcard
+- `**` not followed by `/` or at the end of a string is treated as a regular `*` wildcard
 - `**` not preceded by `/` or at the start of a string is treated as a regular `*` wildcard
 - A trailing `*` cannot match an empty filename component: `abc/*` does not match `abc/`, but `abc/**` (globstar) still does
-- `***` (three or more stars) is not a valid globstar and does not match a trailing `/`
+- `***` (three or more stars) is not a globstar, but rather behaves identically to `*`
 
 Examples:
 ```julia
