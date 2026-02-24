@@ -70,7 +70,7 @@ Returns a `Glob.FilenameMatch` object, which can be used with `occursin()`. Avai
 * `i` = `CASELESS` : Performs case-insensitive matching
 * `p` = `PERIOD` : A leading period (`.`) character must be exactly matched by a period (`.`) character (not a `?`, `*`, or `[]`). A leading period is a period at the beginning of a string, or a period after a slash if PATHNAME is true.
 * `e` = `NOESCAPE` : Do not treat backslash (`\`) as a special character (in extended mode, this only outside of `[]`)
-* `d` = `PATHNAME` : A slash (`/`) character must be exactly matched by a slash (`/`) character (not a `?`, `*`, or `[]`), "**/" matches zero or more directories (globstar)
+* `d` = `PATHNAME` : A slash (`/`) character must be exactly matched by a slash (`/`) character (not a `?`, `*`, or `[]`), `**/` matches zero or more directories (globstar), and a trailing `*` cannot match an empty filename component (e.g. `abc/*` does not match `abc/`, but `abc/**` still does)
 * `x` = `EXTENDED` : Additional features borrowed from newer shells, such as `bash` and `tcsh`
     * Backslash (`\``) characters in `[]` groups escape the next character
 """
@@ -243,13 +243,18 @@ function occursin(fn::FilenameMatch, s::AbstractString)
         mc == '*' || return false # pattern characters left to match, but no string left
         if after_slash
             patnext = iterate(pattern, mi)
-            patnext === nothing && break
+            if patnext === nothing
+                # single trailing * after slash: allowed only in non-pathname mode
+                # (in pathname mode, * cannot match an empty filename component)
+                pathname || break
+                return false
+            end
             mc, mi = patnext
             mc == '*' || return false # pattern characters left to match, but no string left
             patnext = iterate(pattern, mi)
-            patnext === nothing && break
+            patnext === nothing && break # ** matches empty string
             mc, mi = patnext
-            mc == '*' || mc == '/' || return false # pattern characters left to match, but no string left
+            mc == '/' || return false # *** does not match empty string, only **/
         end
     end
     return true

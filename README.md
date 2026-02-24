@@ -60,9 +60,11 @@ When the `PATHNAME` flag (`d`) is enabled, `**/` is treated as a **globstar** pa
 
 Notes:
 - `**/` matches zero or more directories, including none (e.g., `a/**/b` matches both `a/b` and `a/x/y/b`)
-- `**` at the end of a pattern matches everything remaining
+- `**` at the end of a pattern matches everything remaining, including zero remaining components (e.g. `a/**` matches `a/`)
 - `**` not followed by `/` is treated as a regular `*` wildcard
 - `**` not preceded by `/` or at the start of a string is treated as a regular `*` wildcard
+- A trailing `*` cannot match an empty filename component: `abc/*` does not match `abc/`, but `abc/**` (globstar) still does
+- `***` (three or more stars) is not a valid globstar and does not match a trailing `/`
 
 Examples:
 ```julia

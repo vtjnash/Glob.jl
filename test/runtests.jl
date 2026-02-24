@@ -264,6 +264,20 @@ end
     @test occursin(fn".a/**/**/"pdx, ".a/")
     @test !occursin(fn".a/**/**"pdx, ".a")
     @test occursin(fn"**/**/**/"pdx, "")
+
+    # In pathname mode, a trailing * cannot match an empty filename component
+    # (i.e. the empty string after a trailing slash, or the empty string at the start)
+    @test !occursin(fn"abc/*"d, "abc/")   # * cannot match "" after /
+    @test !occursin(fn"abc/*"dp, "abc/")
+    @test !occursin(fn"abc/***"d, "abc/") # *** is not a globstar
+    @test !occursin(fn"*"d, "")           # * cannot match "" at start
+    @test !occursin(fn"***"d, "")         # *** is not a globstar
+    # ** (globstar) still matches the empty tail after a trailing slash
+    @test occursin(fn"abc/**"d, "abc/")
+    @test occursin(fn"abc/**"dp, "abc/")
+    # Without PATHNAME, trailing * may still match ""
+    @test occursin(fn"abc/*", "abc/")
+    @test occursin(fn"*", "")
 end
 
 @test_types glob"ab/?/d".pattern (AbstractString, Glob.FilenameMatch, AbstractString)
