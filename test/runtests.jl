@@ -253,11 +253,14 @@ end
     @test !occursin(fn"a/**/b"d, "a/b/c")
     @test !occursin(fn"a/**/b"d, "x/a/b")
 
-    # Dotfile patterns with **/ and PERIOD flag
+    # Dotfile patterns with ** and PERIOD flag
     @test !occursin(fn".a/**/"xpd, ".a/.b/.c/")
     @test occursin(fn".a/**/"xd, ".a/.b/.c/")
     @test occursin(fn".a/**/.d"xdp, ".a/b/.d")
     @test occursin(fn".a/**/.d"xdp, ".a/b/.d")
+    @test occursin(fn"a/**"dp, "a/b/c")
+    @test !occursin(fn"a/**"dp, "a/b/.c")
+    @test !occursin(fn"a/**"dp, "a/.b/c")
 
     # Trailing ** patterns
     @test occursin(fn".a/**/**"pdx, ".a/")

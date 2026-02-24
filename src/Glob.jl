@@ -135,6 +135,8 @@ function occursin(fn::FilenameMatch, s::AbstractString)
                         peek2_c, peek2_s = @something iterate(pattern, peek1_s) begin
                             # this is trailing_globstar - but check for dotfiles if PERIOD flag set
                             if period
+                                peek3_c, _ = @something iterate(s, i) break
+                                peek3_c == '.' && return false
                                 j = skip_to_slash(s, i)
                                 while j !== nothing
                                     peek3_c, j = @something iterate(s, j) break
