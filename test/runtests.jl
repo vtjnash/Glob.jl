@@ -58,6 +58,15 @@ end
 @test occursin(fn"[a-]", "a")
 @test occursin(fn"[a-]", "-")
 @test !occursin(fn"[a-]", "b")
+@test !occursin(fn"[a-", "x")       # nothing after - in range: invalid, bracket treated as literal
+@test !occursin(fn"[[", "a")        # inner [ with nothing after it in _match_bracket
+@test !occursin(fn"[[:", "a")       # bracket class content truncated immediately
+@test !occursin(fn"[[:a", "a")      # bracket class content truncated mid-name
+@test !occursin(fn"[a-[:", "a")     # invalid range endpoint (bracket class truncated)
+@test !occursin(fn"[\\"x, "a")      # extended \\ at end of bracket expression
+@test !occursin(fn"[a-\\"x, "a")    # extended \\ at end of range endpoint
+@test !occursin(fn"[!", "a")        # negated bracket with no content
+@test !occursin(fn"[!]", "a")       # negated bracket with no content
 @test occursin(fn"[!a-]", "b")
 @test !occursin(fn"[!a-]", "a")
 @test occursin(fn"[!a]", "!")
@@ -94,6 +103,7 @@ end
 @test !occursin(fn"ab*d"dp, "aba/d")
 @test !occursin(fn"ab*d"dp, "ab/d")
 @test occursin(fn"ab*d", "ab/d")
+@test !occursin(fn"[/]"d, "/") # bracket expression matching / is blocked in PATHNAME mode
 @test occursin(fn"ab*d", "aba/d")
 @test occursin(fn"[a-z]"i, "B")
 @test !occursin(fn"[a-z]"i, "_")
@@ -158,6 +168,8 @@ end
 @test !occursin(fn"_[[=a=]]_", "_á_")
 @test occursin(fn"[[=a=]-z]", "-")
 @test_throws ErrorException occursin(fn"[a-[=z=]]", "e")
+@test_throws ErrorException occursin(fn"[[.ab.]]", "a")  # multi-char collating symbol
+@test_throws ErrorException occursin(fn"[[=ab=]]", "a")  # multi-char character equivalent
 
 @test !occursin(fn"\?", "\\?")
 @test occursin(fn"\?", "?")
@@ -358,6 +370,10 @@ end
     @test glob("**/src/*", root; join=false) == [joinpath("src", "Glob.jl")]
     @test glob("**/src/**", root; join=false) == ["src", joinpath("src", "Glob.jl")]
     @test glob("**/src/**/", root; join=false) == [joinpath("src", "")]
+
+    # glob with a non-String AbstractString prefix (SubString) should convert to String
+    @test isempty(glob("__nonexistent__*", SubString(root, 1, lastindex(root)); join=false)::Vector{String})
+    @test glob("src/*", SubString(root, 1, lastindex(root)); join=false)::Vector{String} == [joinpath("src", "Glob.jl")]
 end
 
 function test_string(x1)
