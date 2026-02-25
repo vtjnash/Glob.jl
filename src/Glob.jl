@@ -626,45 +626,59 @@ function occursin_sub(gm::GlobMatch, pi::Int, arr::AbstractVector)
 end
 
 """
-    readdir(pattern::GlobMatch, [directory::AbstractString]; join::Bool=true, sort::Bool=true)
+    readdir(pattern::GlobMatch, [directory]; join::Bool=true, sort::Bool=true)
 
 Alias for [`glob()`](@ref).
 """
 readdir(pattern::GlobMatch, prefix=""; join::Bool=true, sort::Bool=true) = glob(pattern, prefix; join=join, sort=sort)
 
 """
-    glob(pattern, [directory::AbstractString]; join::Bool=true, sort::Bool=true)
+    glob(pattern, [directory]; join::Bool=true, sort::Bool=true)
 
 Returns a list of all files matching `pattern` in `directory`.
 
 * If directory is not specified, it defaults to the current working directory.
 * Never returns `directory`, even if it would match.
-* If `join` is `true` (default), the results are joined with the directory path. If `false`, only the matched paths relative to the directory are returned.
+* If directory is given and `join` is `true` (default), the results are joined with the directory path. If `false`, only the matched paths relative to the directory are returned.
 * If `sort` is `true` (default), the results are sorted lexicographically.
 * Pattern can be any of:
     1. A `Glob.GlobMatch` object:
 
             glob"a/?/c"
 
+        Attempting to create a GlobMatch object from a string with a leading `/` or the empty string is an error.
+
     2. A string, which will be converted into a GlobMatch expression:
 
             "a/?/c" # equivalent to 1, above
+
+        As an interactive convenience, an absolute path is allowed here if directory is not specified, and will be split into drive and path (pattern) components.
+        For script usage, it is strongly recommended to keep the pattern and directory prefix separate to avoid mistakes with escaping special characters.
 
     3. A vector of strings and/or objects which implement `occursin`, including `Regex` and `Glob.FilenameMatch` objects
 
             ["a", r".", fn"c"] # again, equivalent to 1, above
 
-        * Each element of the vector will be used to match another level in the file hierarchy
-        * no conversion of strings to `Glob.FilenameMatch` objects or directory splitting on `/` will occur.
+        * Each element of the vector will be used to match another level in the file hierarchy.
+        * No conversion of strings to `Glob.FilenameMatch` objects or directory splitting on `/` will occur.
 
 A trailing `/` (or equivalently, a trailing empty string in the vector) will cause glob to only match directories,
 and will be returned in the results if it was required to be matched explicitly.
-
-Attempting to use a pattern with a leading `/` or the empty string is an error; use the `directory` argument to specify the absolute path to the directory in such a case.
 """
 function glob(pattern, prefix=""; join::Bool=true, sort::Bool=true)
-    if prefix isa AbstractString && !(prefix isa String)
-        prefix = String(prefix)::String
+    if prefix isa AbstractString
+        if !(prefix isa String)
+            prefix = String(prefix)::String
+        end
+        if isempty(prefix) && pattern isa AbstractString && !isempty(pattern)
+            prefix, pattern = splitabspath(pattern)
+            if isempty(pattern)
+                return [prefix]
+            end
+            if !isempty(prefix)
+                join = true
+            end
+        end
     end
     gm = GlobMatch(pattern)
     pats = gm.pattern
@@ -688,6 +702,24 @@ function glob(pattern, prefix=""; join::Bool=true, sort::Bool=true)
         matches = newmatches
     end
     return matches
+end
+
+function splitprefix(s::AbstractString, prefix::Regex)
+    # based on chopprefix
+    first = firstindex(s)
+    m = match(prefix, s, first, Base.PCRE.ANCHORED)
+    m === nothing && return SubString(s, first, 0), SubString(s)
+    return m.match, SubString(s, ncodeunits(m.match) + 1)
+end
+
+function splitabspath(s::AbstractString)
+    # Separate a path into the initial drive components and the rest.
+    # Empty string for the abspath indicates a relative path.
+    drive, rest = splitdrive(s)
+    dir, rest = splitprefix(rest, Base.Filesystem.path_separator_re)
+    isempty(drive) && isempty(dir) && return typeof(s)(""), s
+    root, rest = typeof(s)(drive * dir), typeof(s)(rest)
+    return root, rest
 end
 
 function _globstar!(prefix::AbstractString, matches, i::Int, gm::GlobMatch, sort::Bool)
