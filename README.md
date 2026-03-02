@@ -18,28 +18,31 @@ Glob is implemented to have both a functional form and an object-oriented form. 
   * Returns a list of all files matching `pattern` in `directory`.
   * Never returns `directory`, even if it would match.
   * If directory is not specified, it defaults to the current working directory.
-  * If `join` is `true` (default), the results are joined with the directory path. If `false`, only the matched paths relative to the directory are returned.
+  * If directory is given and `join` is `true` (default), the results are joined with the directory path. If `false`, only the matched paths relative to the directory are returned.
   * If `sort` is `true` (default), the results are sorted lexicographically.
   * Pattern can be any of:
     1. A `Glob.GlobMatch` object:
 
             glob"a/?/c"
 
+        Attempting to create a GlobMatch object from a string with a leading `/` or the empty string is an error.
+
     2. A string, which will be converted into a GlobMatch expression:
 
             "a/?/c" # equivalent to 1, above
+
+        As an interactive convenience, an absolute path is allowed here if directory is not specified, and will be split into drive and path (pattern) components.
+        For script usage, it is strongly recommended to keep the pattern and directory prefix separate to avoid mistakes with escaping special characters.
 
     3. A vector of strings and/or objects which implement `occursin`, including `Regex` and `Glob.FilenameMatch` objects
 
             ["a", r".", fn"c"] # again, equivalent to 1, above
 
-        * Each element of the vector will be used to match another level in the file hierarchy
-        * no conversion of strings to `Glob.FilenameMatch` objects or directory splitting on `/` will occur.
+        * Each element of the vector will be used to match another level in the file hierarchy.
+        * No conversion of strings to `Glob.FilenameMatch` objects or directory splitting on `/` will occur.
 
     4. A trailing `/` (or equivalently, a trailing empty string in the vector) will cause glob to only match directories,
        and will be returned in the results if it was required to be matched explicitly.
-
-    5. Attempting to create a GlobMatch object from a string with a leading `/` or the empty string is an error.
 
 * `readdir(pattern::GlobMatch, [directory::AbstractString]; join::Bool=true, sort::Bool=true)` ::
   * alias for `glob()`

@@ -324,6 +324,13 @@ cd(root) do
               glob("src/*.jl"; join=false) ==
               glob("src/*.jl", root; join=false) ==
               [joinpath("src", "Glob.jl")]
+
+        # These are written such that even if `root` has meta-characters, the test will still pass
+        slashroot = replace(root, Base.Filesystem.path_separator_re => '/')
+        prefix, rest = Glob.splitabspath(slashroot)
+        normroot = joinpath(prefix, split(rest, '/')...)
+        @test normroot in glob(slashroot; join=false)
+        @test joinpath(normroot, "src", "Glob.jl") in glob(slashroot * "/src/*.jl"; join=false)
     end
 end
 
@@ -527,4 +534,55 @@ end
     @test occursin(gm_explicit, [".git", "config"])     # GlobStar matches zero, .git matched literally
     @test occursin(gm_explicit, ["a", ".git", "config"])
     @test !occursin(gm_explicit, [".other", ".git", "config"])  # .other blocks GlobStar
+end
+
+@testset "splitprefix" begin
+    sep_re = r"/+"sa # Base.Filesystem.path_separator_re on unix
+    @test Glob.splitprefix("/foo/bar", sep_re) == ("/", "foo/bar")
+    @test Glob.splitprefix("foo/bar", sep_re) == ("", "foo/bar")
+    @test Glob.splitprefix("", sep_re) == ("", "")
+    @test Glob.splitprefix("///foo", sep_re) == ("///", "foo")
+    @test Glob.splitprefix("abcdef", r"[a-c]+") == ("abc", "def")
+    @test Glob.splitprefix("xyz", r"[a-c]+") == ("", "xyz")
+    @test Glob.splitprefix("xabc", r"[a-c]+") == ("", "xabc")
+end
+
+@testset "splitabspath" begin
+    @test Glob.splitabspath("") == ("", "")
+    @test Glob.splitabspath("foo") == ("", "foo")
+    @test Glob.splitabspath("foo/bar") == ("", "foo/bar")
+    @test Glob.splitabspath("/") == ("/", "")
+    @test Glob.splitabspath("/foo") == ("/", "foo")
+    @test Glob.splitabspath("/foo/bar") == ("/", "foo/bar")
+    @test Glob.splitabspath("///foo/bar") == ("///", "foo/bar")
+    r, p = Glob.splitabspath("/foo")
+    @test r isa String
+    @test p isa String
+    r2, p2 = Glob.splitabspath("foo")
+    @test r2 isa String
+    @test p2 isa String
+end
+
+if Sys.iswindows()
+    @testset "splitabspath (Windows)" begin
+        @test Glob.splitabspath("C:\\foo\\bar") == ("C:\\", "foo\\bar")
+        @test Glob.splitabspath("C:/foo/bar")   == ("C:/",  "foo/bar")
+        @test Glob.splitabspath("C:\\")         == ("C:\\", "")
+        @test Glob.splitabspath("C:/")          == ("C:/",  "")
+        @test Glob.splitabspath("C:\\\\foo")    == ("C:\\\\", "foo")
+        @test Glob.splitabspath("\\\\server\\share\\path") == ("\\\\server\\share\\", "path")
+        @test Glob.splitabspath("\\\\server\\share\\")     == ("\\\\server\\share\\", "")
+        @test Glob.splitabspath("\\foo\\bar")   == ("\\", "foo\\bar")
+        @test Glob.splitabspath("/foo/bar")     == ("/",  "foo/bar")
+        @test Glob.splitabspath("C:foo")        == ("C:", "foo")
+        @test Glob.splitabspath("C:foo/bar")    == ("C:", "foo/bar")
+        @test Glob.splitabspath("foo\\bar")     == ("", "foo\\bar")
+    end
+end
+
+@testset "glob(\"/\") and glob(\"\")" begin
+    # glob("/") returns the root string directly (not a Vector), since the
+    # pattern after splitting off the abspath prefix is empty
+    @test glob("/")::Vector{String} == ["/"]
+    @test_throws ErrorException glob("")
 end
