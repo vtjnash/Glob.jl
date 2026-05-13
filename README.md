@@ -52,12 +52,16 @@ Glob is implemented to have both a functional form and an object-oriented form. 
 
 * `fn"pattern"ipedx` ::
   * Returns a `Glob.FilenameMatch` object, which can be used with `occursin()`. Available flags are:
-    * `i` = `CASELESS` : Performs case-insensitive matching
+    * `i` = `CASELESS` : Performs case-insensitive matching by converting to uppercase.
     * `p` = `PERIOD` : A leading period (`.`) character must be exactly matched by a period (`.`) character (not a `?`, `*`, or `[]`). A leading period is a period at the beginning of a string, or a period after a slash if PATHNAME is true.
     * `e` = `NOESCAPE` : Do not treat backslash (`\`) as a special character (in extended mode, this only outside of `[]`)
     * `d` = `PATHNAME` : A slash (`/`) character must be exactly matched by a slash (`/`) character (not a `?`, `*`, or `[]`). When this flag is set, `**/` is treated as a globstar pattern that matches zero or more directories (see below).
-    * `x` = `EXTENDED` : Additional features borrowed from newer shells, such as `bash` and `tcsh`
+    * `x` = `EXTENDED` : Additional features borrowed from newer shells, such as `bash` and `tcsh`:
       * Backslash (`\`) characters in `[]` groups escape the next character
+
+The `CASELESS` mode is similar to [non-unicode regex canonicalization](https://tc39.es/ecma262/multipage/text-processing.html#sec-runtime-semantics-canonicalize-ch).
+However, character ranges are checked both before and after uppercasing (for both pattern and string) and
+character class names (such as `[:lower:]` and `[:upper:]`) must still be specified with lowercase in the pattern and will apply only to the original character before uppercasing the string.
 
 ## Globstar (`**`)
 
