@@ -35,7 +35,7 @@ macro something(args...)
 end
 end
 
-const CASELESS = UInt32(1 << 0) # i -- Do case-insensitive matching
+const CASELESS = UInt32(1 << 0) # i -- Do case-insensitive matching by uppercase
 const PERIOD   = UInt32(1 << 1) # p -- A leading period (.) character must be exactly matched by a period (.) character
 const NOESCAPE = UInt32(1 << 2) # e -- Do not treat backslash (\) as a special character
 const PATHNAME = UInt32(1 << 3) # d -- Slash (/) character must be exactly matched by a slash (/) character
@@ -67,12 +67,16 @@ end
 
 Returns a `Glob.FilenameMatch` object, which can be used with `occursin()`. Available flags are:
 
-* `i` = `CASELESS` : Performs case-insensitive matching
+* `i` = `CASELESS` : Performs case-insensitive matching by converting to uppercase.
 * `p` = `PERIOD` : A leading period (`.`) character must be exactly matched by a period (`.`) character (not a `?`, `*`, or `[]`). A leading period is a period at the beginning of a string, or a period after a slash if PATHNAME is true.
 * `e` = `NOESCAPE` : Do not treat backslash (`\`) as a special character (in extended mode, this only outside of `[]`)
 * `d` = `PATHNAME` : A slash (`/`) character must be exactly matched by a slash (`/`) character (not a `?`, `*`, or `[]`), `**/` matches zero or more directories (globstar), and a trailing `*` cannot match an empty filename component (e.g. `abc/*` does not match `abc/`, but `abc/**` still does)
-* `x` = `EXTENDED` : Additional features borrowed from newer shells, such as `bash` and `tcsh`
+* `x` = `EXTENDED` : Additional features borrowed from newer shells, such as `bash` and `tcsh`:
     * Backslash (`\``) characters in `[]` groups escape the next character
+
+The `CASELESS` mode is similar to [non-unicode regex canonicalization](https://tc39.es/ecma262/multipage/text-processing.html#sec-runtime-semantics-canonicalize-ch).
+However, character ranges are checked both before and after uppercasing (for both pattern and string) and
+character class names (such as `[:lower:]` and `[:upper:]`) must still be specified with lowercase in the pattern and will apply only to the original character before uppercasing the string.
 """
 (macro fn_str end, macro fn_mstr end, FilenameMatch)
 
@@ -194,7 +198,7 @@ function occursin(fn::FilenameMatch, s::AbstractString)
                             mc, mi = patnext
                         end
                     end
-                    match = ((c == mc) || (caseless && uppercase(c)==uppercase(mc)))
+                    match = ((c == mc) || (caseless && uppercase(c) == uppercase(mc)))
                 end
                 # Update after_slash for next iteration (track if pattern char was '/')
                 after_slash = (mc == '/')
@@ -262,7 +266,7 @@ function occursin(fn::FilenameMatch, s::AbstractString)
     return true
 end
 
-function _match_bracket(pat::AbstractString, mc::Char, i, cl::Char, cu::Char) # returns (mc, i, valid, match)
+function _match_bracket(pat::AbstractString, mc::Char, i, c::Char, cu::Char, caseless::Bool) # returns (mc, i, valid, match)
     next = iterate(pat, i)
     if next === nothing
         return (mc, i, false, false)
@@ -290,31 +294,32 @@ function _match_bracket(pat::AbstractString, mc::Char, i, cl::Char, cu::Char) # 
     end
     if mc2 == ':'
         phrase = SubString(pat, j, k0)
+        # these are all tests on the original character (islower/isupper are not affected by caseless flag)
         match = (
             if phrase == "alnum"
-                isletter(cl) || isnumeric(cl)
+                isletter(c) || isnumeric(c)
             elseif phrase == "alpha"
-                isletter(cl)
+                isletter(c)
             elseif phrase == "blank"
-                (cl == ' ' || cl == '\t')
+                (c == ' ' || c == '\t')
             elseif phrase == "cntrl"
-                iscntrl(cl)
+                iscntrl(c)
             elseif phrase == "digit"
-                isdigit(cl)
+                isdigit(c)
             elseif phrase == "graph"
-                isprint(cl) && !isspace(cl)
+                isprint(c) && !isspace(c)
             elseif phrase == "lower"
-                islowercase(cl) | islowercase(cu)
+                islowercase(c)
             elseif phrase == "print"
-                isprint(cl)
+                isprint(c)
             elseif phrase == "punct"
-                ispunct(cl)
+                ispunct(c)
             elseif phrase == "space"
-                isspace(cl)
+                isspace(c)
             elseif phrase == "upper"
-                isuppercase(cl) | isuppercase(cu)
+                isuppercase(c)
             elseif phrase == "xdigit"
-                isxdigit(cl)
+                isxdigit(c)
             else
                 error(string("invalid character expression [:",phrase,":]"))
             end)
@@ -332,18 +337,13 @@ function _match_bracket(pat::AbstractString, mc::Char, i, cl::Char, cu::Char) # 
             error(string("only single characters are currently supported as character equivalents, got [=", SubString(pat, j, k0), "=]"))
         end
         mc, j = something(iterate(pat, j))
-        match = (cl==mc) | (cu==mc)
+        match = ((c == mc) | (cu == mc)) || (caseless && cu == uppercase(mc))
         return (mc, k3, true, match)
     end
 end
 
 function _match(pat::AbstractString, i0, c::Char, caseless::Bool, extended::Bool) # returns (i, valid, match)
-    if caseless
-        cl = lowercase(c)
-        cu = uppercase(c)
-    else
-        cl = cu = c
-    end
+    cu = caseless ? uppercase(c) : c
     i = i0
     next = iterate(pat, i)
     if next === nothing
@@ -366,7 +366,7 @@ function _match(pat::AbstractString, i0, c::Char, caseless::Bool, extended::Bool
         end
         notfirst = true
         if (mc == '[')
-            mc, i, valid, match2 = _match_bracket(pat, mc, i, cl, cu)
+            mc, i, valid, match2 = _match_bracket(pat, mc, i, c, cu, caseless)
             if valid
                 match |= match2
                 continue
@@ -392,11 +392,11 @@ function _match(pat::AbstractString, i0, c::Char, caseless::Bool, extended::Bool
             end
             mc2, j = next
             if mc2 == ']'
-                match |= ((cl == mc) | (cu == mc) | (c == '-'))
+                match |= ((c == mc) | (cu == mc) | (c == '-')) || (caseless && cu == uppercase(mc))
                 return (j, true, match ⊻ negate)
             end
             if mc2 == '['
-                mc2, j, valid, match2 = _match_bracket(pat, mc2, j, cl, cu)
+                mc2, j, valid, match2 = _match_bracket(pat, mc2, j, c, cu, caseless)
                 if valid
                     error("[: and [= are not valid range endpoints")
                 elseif !match2
@@ -409,11 +409,14 @@ function _match(pat::AbstractString, i0, c::Char, caseless::Bool, extended::Bool
                 end
                 mc2, j = next
             end
-            match |= (mc <= cl <= mc2)
+            match |= (mc <= c <= mc2)
             match |= (mc <= cu <= mc2)
+            # This is split into 3 tests since we don't want to accidentally
+            # widen or shrink the range if mc and mc2 were not both initially uppercase.
+            match = match || (caseless && uppercase(mc) <= cu <= uppercase(mc2))
             i = j
         else
-            match |= ((cl == mc) | (cu == mc))
+            match |= ((c == mc) | (cu == mc)) || (caseless && cu == uppercase(mc))
         end
     end
     return (i0, false, c=='[')
