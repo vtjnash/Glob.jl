@@ -8,7 +8,7 @@
 
 This implementation of Glob is based on the IEEE Std 1003.1, 2004 Edition (Open Group Base Specifications Issue 6) for fnmatch and glob. The specification of which can be found online: [fnmatch](http://pubs.opengroup.org/onlinepubs/009696899/functions/fnmatch.html) and [glob](http://pubs.opengroup.org/onlinepubs/009696899/functions/glob.html).
 
-> Note, because this is based on the POSIX specification, the path separator in a glob pattern is always `/` and the escape character is always `\`. However, the returned path string will always contain the system path separator character `Base.path_separator`. Therefore, it may be true that a path returned by `glob` will fail to match a `Glob.FilenameMatch` constructed from the same pattern.
+> Note, because this is based on the POSIX specification, the path separator in a glob pattern is always `/` and the escape character is always `\`. However, the returned path string will always contain the system path separator character `Base.Filesystem.path_separator`. Therefore, it may be true that a path returned by `glob` will fail to match a `Glob.FilenameMatch` constructed from the same pattern.
 
 ## Usage
 
