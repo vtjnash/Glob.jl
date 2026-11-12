@@ -597,3 +597,27 @@ end
     @test glob("/")::Vector{String} == ["/"]
     @test_throws ErrorException glob("")
 end
+
+@testset "cmd_glob" begin
+    mktempdir() do dir
+        for name in ["a.txt", "b.txt", "c.md", "[x].txt", "x.txt", ".hidden.txt"]
+            touch(joinpath(dir, name))
+        end
+        mkdir(joinpath(dir, "sub"))
+        touch(joinpath(dir, "sub", "d.txt"))
+        cd(dir) do
+            @test cmd_glob(["*.txt"]) == ["[x].txt", "a.txt", "b.txt", "x.txt"]
+            @test cmd_glob(["[[]x].txt"]) == ["[x].txt"]  # a bracket expression escapes `[`
+            @test cmd_glob(["[x].txt"]) == ["x.txt"]
+            @test cmd_glob(["sub", "*.txt"]) == [joinpath("sub", "d.txt")]
+            @test cmd_glob(["**", "d.txt"]) == [joinpath("sub", "d.txt")]
+            @test cmd_glob(["*.none"]) == String[]
+            @test cmd_glob(splitpath("sub/*")) == [joinpath("sub", "d.txt")]
+        end
+        @test cmd_glob(splitpath(joinpath(dir, "*.md"))) == [joinpath(dir, "c.md")]
+        @test cmd_glob(splitpath(joinpath(dir, "sub", "*"))) == [joinpath(dir, "sub", "d.txt")]
+        root = first(splitpath(dir))
+        @test cmd_glob([root]) == [root]
+    end
+    @test_throws ArgumentError cmd_glob(String[])
+end
