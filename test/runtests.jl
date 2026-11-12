@@ -597,3 +597,36 @@ end
     @test glob("/")::Vector{String} == ["/"]
     @test_throws ErrorException glob("")
 end
+
+@testset "bracket expressions escape special characters" begin
+    mktempdir() do dir
+        # Windows does not allow `*`, `?` or `\` in a file name, only `[` and `]`
+        special = !Sys.iswindows()
+        names = special ? ["[x]", "x", "a*b", "axb", "q?", "qz", "b\\c", "bxc"] : ["[x]", "x"]
+        for name in names
+            touch(joinpath(dir, name))
+        end
+        dirs = special ? ["d[", "d*", "dx"] : ["d[", "dx"]
+        for d in dirs
+            mkdir(joinpath(dir, d))
+            mkdir(joinpath(dir, d, "e"))
+            touch(joinpath(dir, d, "e", "f"))
+        end
+        g(p) = glob(p, dir; join=false)
+        @test g("[[]x]") == ["[x]"]
+        @test g("[x]") == ["x"]
+        @test g("d[[]/e/f") == [joinpath("d[", "e", "f")]
+        @test g("d[[]/*/f") == [joinpath("d[", "e", "f")]
+        @test g("*/e/[f]") == [joinpath(d, "e", "f") for d in sort(dirs)]
+        if special
+            @test g("a[*]b") == ["a*b"]
+            @test g("q[?]") == ["q?"]
+            @test g("b[\\]c") == ["b\\c"]
+            @test g("d[*]/e/f") == [joinpath("d*", "e", "f")]
+            @test g("d[*]/*") == [joinpath("d*", "e")]
+            @test g("d*/e/f") == [joinpath(d, "e", "f") for d in sort(dirs)]
+        end
+        # results joined with the directory
+        @test glob("d[[]/e/*", dir) == [joinpath(dir, "d[", "e", "f")]
+    end
+end
