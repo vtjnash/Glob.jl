@@ -4,7 +4,7 @@ module Glob
 
 import Base: readdir, show, occursin
 
-export glob, @fn_str, @fn_mstr, @glob_str, @glob_mstr
+export glob, cmd_glob, @fn_str, @fn_mstr, @glob_str, @glob_mstr
 
 if VERSION >= v"1.11"
     Base.include_string(Glob,
@@ -443,37 +443,25 @@ function GlobMatch(pattern::AbstractString)
     end
     pat = split(pattern, '/')
     glob = Vector{Any}(undef, length(pat))
-    extended = false
     for i in eachindex(pat)
-        p = pat[i]
-        # Check for ** pattern
-        if p == "**"
-            glob[i] = GlobStar()
-            continue
-        end
-        next = iterate(p)
-        ispattern = false
-        while next !== nothing
-            c, j = next
-            next = iterate(p, j)
-            if extended & (c == '\\')
-                if next === nothing
-                    break
-                end
-                next = iterate(p, j)
-            elseif (c == '*') | (c == '?') |
-                    (c == '[' && _match(p, j, '\0', false, extended)[2])
-                ispattern = true
-                break
-            end
-        end
-        if ispattern
-            glob[i] = FilenameMatch(p, PERIOD|PATHNAME)
-        else
-            glob[i] = p
-        end
+        glob[i] = _globcomponent(pat[i])
     end
     return GlobMatch(glob)
+end
+
+# The matcher for one path component of a glob pattern: `GlobStar()` for `**`, a
+# `FilenameMatch` if the component contains a wildcard, and the component itself otherwise.
+function _globcomponent(p::AbstractString)
+    p == "**" && return GlobStar()
+    next = iterate(p)
+    while next !== nothing
+        c, j = next
+        next = iterate(p, j)
+        if (c == '*') | (c == '?') | (c == '[' && _match(p, j, '\0', false, false)[2])
+            return FilenameMatch(p, PERIOD|PATHNAME)
+        end
+    end
+    return p
 end
 
 function show(io::IO, gm::GlobMatch)
@@ -705,6 +693,30 @@ function glob(pattern, prefix=""; join::Bool=true, sort::Bool=true)
         matches = newmatches
     end
     return matches
+end
+
+"""
+    cmd_glob(parts::AbstractVector{<:AbstractString})::Vector{String}
+
+Return the paths that match a glob pattern given as a vector of path components, sorted as
+by [`glob`](@ref), or an empty vector if none match.
+
+If the first component is an absolute path, such as `"/"` or `"C:\\\\"`, matching starts in
+that directory and the returned paths start with it; otherwise matching starts in the current
+directory and the returned paths are relative to it. Each other component matches one level
+of the file hierarchy, as a component of a [`glob`](@ref) pattern does: `**` matches any
+number of levels, a component with a wildcard (`*`, `?` or a bracket expression) is a
+`FilenameMatch` pattern with the `PERIOD` and `PATHNAME` flags, and any other component
+matches only that name. The components are used as given and never split further, so a
+vector of components, for example from `splitpath`, can describe a pattern on any platform
+without depending on which characters are path separators. A vector with only an absolute
+path returns that path, and an empty vector throws an `ArgumentError`.
+"""
+function cmd_glob(parts::AbstractVector{<:AbstractString})
+    isempty(parts) && throw(ArgumentError("cmd_glob: no path components"))
+    prefix, rest = isabspath(first(parts)) ? (String(first(parts)), @view(parts[2:end])) : ("", parts)
+    isempty(rest) && return [prefix]
+    return glob(Any[_globcomponent(p) for p in rest], prefix)::Vector{String}
 end
 
 function splitprefix(s::AbstractString, prefix::Regex)

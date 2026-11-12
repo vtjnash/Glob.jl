@@ -128,6 +128,27 @@ occursin(gm, ["a", "b", "middle", "c"])   # true
 
 `GlobStar()` also implements `occursin`, always returning `true` for any string, so it can be used with the `glob()` function as well (matching any single file/directory name).
 
+## Matching a pattern given as path components
+
+`cmd_glob(parts)` returns the paths that match a glob pattern given as a vector of path
+components, such as one from `splitpath`, instead of a single pattern string. The components are
+never split further, so the same vector works on every platform, whichever characters are
+path separators there:
+
+```julia
+julia> using Glob
+
+julia> cmd_glob(["src", "*.jl"])
+1-element Vector{String}:
+ "src/Glob.jl"
+```
+
+If the first component is an absolute path, such as `"/"` or `"C:\\"`, matching starts in that
+directory; otherwise it starts in the current directory. Each other component matches one level
+of the file hierarchy, as in `glob`, including `**` for any number of levels. The result is
+empty if nothing matches. Julia's command literals can use `cmd_glob` to expand globs in a way that
+works across platforms.
+
 ## Unimplemented features
 
  * `[.` collating symbols only accept single characters (the Unicode locale has no collating symbols defined)
