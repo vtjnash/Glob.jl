@@ -146,8 +146,8 @@ julia> cmd_glob(["src", "*.jl"])
 If the first component is an absolute path, such as `"/"` or `"C:\\"`, matching starts in that
 directory; otherwise it starts in the current directory. Each other component matches one level
 of the file hierarchy, as in `glob`, including `**` for any number of levels. The result is
-empty if nothing matches. Julia's command literals can use `cmd_glob` to expand globs such as
-`` `ls *.txt` `` (JuliaLang/julia#20401).
+empty if nothing matches. Julia's command literals can use `cmd_glob` to expand globs in a way that
+works across platforms.
 
 ## Unimplemented features
 

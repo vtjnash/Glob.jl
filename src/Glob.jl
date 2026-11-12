@@ -711,9 +711,6 @@ matches only that name. The components are used as given and never split further
 vector of components, for example from `splitpath`, can describe a pattern on any platform
 without depending on which characters are path separators. A vector with only an absolute
 path returns that path, and an empty vector throws an `ArgumentError`.
-
-Julia's command literals can use `cmd_glob` to expand a glob such as `` `ls *.txt` ``: see
-JuliaLang/julia#20401.
 """
 function cmd_glob(parts::AbstractVector{<:AbstractString})
     isempty(parts) && throw(ArgumentError("cmd_glob: no path components"))
