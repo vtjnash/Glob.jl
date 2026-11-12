@@ -453,18 +453,11 @@ end
 # `FilenameMatch` if the component contains a wildcard, and the component itself otherwise.
 function _globcomponent(p::AbstractString)
     p == "**" && return GlobStar()
-    extended = false
     next = iterate(p)
     while next !== nothing
         c, j = next
         next = iterate(p, j)
-        if extended & (c == '\\')
-            if next === nothing
-                break
-            end
-            next = iterate(p, j)
-        elseif (c == '*') | (c == '?') |
-                (c == '[' && _match(p, j, '\0', false, extended)[2])
+        if (c == '*') | (c == '?') | (c == '[' && _match(p, j, '\0', false, false)[2])
             return FilenameMatch(p, PERIOD|PATHNAME)
         end
     end
@@ -705,15 +698,22 @@ end
 """
     cmd_glob(parts::AbstractVector{<:AbstractString})::Vector{String}
 
-Expand a glob pattern in a command literal, such as `` `ls *.txt` ``, and return the
-matching paths, sorted. Julia calls the `cmd_glob` function visible in the module where the
-command literal appears, so `using Glob` provides globbing in command literals.
+Return the paths that match a glob pattern given as a vector of path components, sorted as
+by [`glob`](@ref), or an empty vector if none match.
 
-`parts` is the pattern split into path components with `splitpath`, so it is never split
-again and works with both `/` and `\\` as separators on Windows. If the pattern is an
-absolute path, the first part is its root, such as `"/"` or `"C:\\\\"`. Each other part is
-a pattern for one level of the file hierarchy, as for [`glob`](@ref); a part that is `**`
-matches any number of levels. The result is empty if nothing matches.
+If the first component is an absolute path, such as `"/"` or `"C:\\\\"`, matching starts in
+that directory and the returned paths start with it; otherwise matching starts in the current
+directory and the returned paths are relative to it. Each other component matches one level
+of the file hierarchy, as a component of a [`glob`](@ref) pattern does: `**` matches any
+number of levels, a component with a wildcard (`*`, `?` or a bracket expression) is a
+`FilenameMatch` pattern with the `PERIOD` and `PATHNAME` flags, and any other component
+matches only that name. The components are used as given and never split further, so a
+vector of components, for example from `splitpath`, can describe a pattern on any platform
+without depending on which characters are path separators. A vector with only an absolute
+path returns that path, and an empty vector throws an `ArgumentError`.
+
+Julia's command literals can use `cmd_glob` to expand a glob such as `` `ls *.txt` ``: see
+JuliaLang/julia#20401.
 """
 function cmd_glob(parts::AbstractVector{<:AbstractString})
     isempty(parts) && throw(ArgumentError("cmd_glob: no path components"))

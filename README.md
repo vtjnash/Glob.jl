@@ -128,12 +128,12 @@ occursin(gm, ["a", "b", "middle", "c"])   # true
 
 `GlobStar()` also implements `occursin`, always returning `true` for any string, so it can be used with the `glob()` function as well (matching any single file/directory name).
 
-## Globbing in command literals
+## Matching a pattern given as path components
 
-`Glob` exports `cmd_glob`, which Julia calls to expand an unquoted `*`, `?` or `[` in a
-command literal, such as `` `ls *.txt` ``, in a module where it is visible. Julia splits the
-pattern into path components with `splitpath` before calling it, so `cmd_glob` works with
-both `/` and `\` as path separators on Windows:
+`cmd_glob(parts)` returns the paths that match a glob pattern given as a vector of path
+components, such as one from `splitpath`, instead of a single pattern string. The components are
+never split further, so the same vector works on every platform, whichever characters are
+path separators there:
 
 ```julia
 julia> using Glob
@@ -143,8 +143,11 @@ julia> cmd_glob(["src", "*.jl"])
  "src/Glob.jl"
 ```
 
-If the pattern is an absolute path, the first component is its root, such as `"/"` or
-`"C:\\"`. A component that is `**` matches any number of directory levels, as in `glob`.
+If the first component is an absolute path, such as `"/"` or `"C:\\"`, matching starts in that
+directory; otherwise it starts in the current directory. Each other component matches one level
+of the file hierarchy, as in `glob`, including `**` for any number of levels. The result is
+empty if nothing matches. Julia's command literals can use `cmd_glob` to expand globs such as
+`` `ls *.txt` `` (JuliaLang/julia#20401).
 
 ## Unimplemented features
 

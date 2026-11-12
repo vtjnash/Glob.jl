@@ -612,12 +612,13 @@ end
             @test cmd_glob(["sub", "*.txt"]) == [joinpath("sub", "d.txt")]
             @test cmd_glob(["**", "d.txt"]) == [joinpath("sub", "d.txt")]
             @test cmd_glob(["*.none"]) == String[]
-            @test cmd_glob(splitpath("sub/*")) == [joinpath("sub", "d.txt")]
+            @test cmd_glob(["sub", "*.none"]) == String[]
+            @test cmd_glob(["none", "*"]) == String[]
         end
-        @test cmd_glob(splitpath(joinpath(dir, "*.md"))) == [joinpath(dir, "c.md")]
-        @test cmd_glob(splitpath(joinpath(dir, "sub", "*"))) == [joinpath(dir, "sub", "d.txt")]
-        root = first(splitpath(dir))
-        @test cmd_glob([root]) == [root]
+        # an absolute first component is the directory to start from
+        @test cmd_glob([dir, "*.md"]) == [joinpath(dir, "c.md")]
+        @test cmd_glob([dir, "sub", "*"]) == [joinpath(dir, "sub", "d.txt")]
+        @test cmd_glob([dir]) == [dir]
     end
     @test_throws ArgumentError cmd_glob(String[])
 end
