@@ -453,14 +453,15 @@ function GlobMatch(pattern::AbstractString)
         end
         next = iterate(p)
         ispattern = false
+        escaped = false
         while next !== nothing
             c, j = next
             next = iterate(p, j)
-            if extended & (c == '\\')
-                if next === nothing
-                    break
-                end
-                next = iterate(p, j)
+            if c == '\\'
+                # an escaped character is never a wildcard
+                escaped = true
+                next === nothing && break
+                next = iterate(p, next[2])
             elseif (c == '*') | (c == '?') |
                     (c == '[' && _match(p, j, '\0', false, extended)[2])
                 ispattern = true
@@ -469,6 +470,8 @@ function GlobMatch(pattern::AbstractString)
         end
         if ispattern
             glob[i] = FilenameMatch(p, PERIOD|PATHNAME)
+        elseif escaped
+            glob[i] = _unescape(p)
         else
             glob[i] = p
         end
@@ -626,6 +629,23 @@ function occursin_sub(gm::GlobMatch, pi::Int, arr::AbstractVector)
         end
         return false
     end
+end
+
+# Remove the backslash escapes from a pattern without wildcards, as `FilenameMatch` would
+# when matching it. A trailing backslash matches itself.
+function _unescape(p::AbstractString)
+    io = IOBuffer()
+    next = iterate(p)
+    while next !== nothing
+        c, j = next
+        next = iterate(p, j)
+        if c == '\\' && next !== nothing
+            c, j = next
+            next = iterate(p, j)
+        end
+        print(io, c)
+    end
+    return String(take!(io))
 end
 
 """

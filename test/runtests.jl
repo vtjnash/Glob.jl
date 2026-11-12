@@ -597,3 +597,26 @@ end
     @test glob("/")::Vector{String} == ["/"]
     @test_throws ErrorException glob("")
 end
+
+@testset "escaped characters in components without wildcards" begin
+    mktempdir() do dir
+        # `[` is the only one of these characters that Windows allows in a file name
+        names = Sys.iswindows() ? ["[x", "ax"] : ["[x", "ax", "a*b", "axb", "q?", "b\\c"]
+        for name in names
+            touch(joinpath(dir, name))
+        end
+        mkdir(joinpath(dir, "d["))
+        touch(joinpath(dir, "d[", "f"))
+        @test glob("\\[x", dir; join=false) == ["[x"]
+        @test glob("d\\[/f", dir; join=false) == [joinpath("d[", "f")]
+        @test glob("d\\[/*", dir; join=false) == [joinpath("d[", "f")]
+        @test Glob.GlobMatch("\\[x").pattern == Any["[x"]
+        @test Glob.GlobMatch("a\\").pattern == Any["a\\"]  # a trailing backslash matches itself
+        if !Sys.iswindows()
+            @test glob("a\\*b", dir; join=false) == ["a*b"]
+            @test glob("q\\?", dir; join=false) == ["q?"]
+            @test glob("b\\\\c", dir; join=false) == ["b\\c"]
+            @test Glob.GlobMatch("b\\\\c").pattern == Any["b\\c"]
+        end
+    end
+end
