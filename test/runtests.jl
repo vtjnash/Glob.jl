@@ -407,15 +407,19 @@ end
 
 test_string("""Glob.GlobMatch(Any["base", r"h\\.+"])""")
 test_string("""glob"base/*/a/[bc]\"""")
-test_string("""glob"base/a[*]b/[[]x/c[?][\\]\"""")
-@test sprint(show, glob"a[b]/\[c") == "glob\"ab/[[]c\""
+test_string("""glob"base/a[*]b/[[]x/c[?]\"""")
+@test sprint(show, glob"a[b]/[[]c") == "glob\"ab/[[]c\""
+if !Sys.iswindows()  # on Windows, `\` is a path separator
+    test_string("""glob"base/a[*]b/[[]x/c[?][\\]\"""")
+    @test sprint(show, glob"a[b]/\[c") == "glob\"ab/[[]c\""
+end
 @test sprint(show, Glob.GlobMatch(Any["a*", "**"])) == "glob\"a[*]/[*][*]\""
 test_string("""fn"base/*/a/[b]\"ipedx""")
 test_string("""fn"base/*/a/[b]\"""")
 
 if isdefined(Base, :escape_raw_string)
     # a trailing backslash or a `"` must be escaped in the string literal
-    test_string("glob\"*\\\\\"")
+    Sys.iswindows() || test_string("glob\"*\\\\\"")
     test_string("glob\"a\\\"b\"")
     test_string("fn\"*\\\\\"p")
     test_string("fn\"*\\\\\\\"x\"")
@@ -621,16 +625,55 @@ end
         end
         mkdir(joinpath(dir, "d["))
         touch(joinpath(dir, "d[", "f"))
-        @test glob("\\[x", dir; join=false) == ["[x"]
-        @test glob("d\\[/f", dir; join=false) == [joinpath("d[", "f")]
-        @test glob("d\\[/*", dir; join=false) == [joinpath("d[", "f")]
-        @test Glob.GlobMatch("\\[x").pattern == Any["[x"]
-        @test Glob.GlobMatch("a\\").pattern == Any["a\\"]  # a trailing backslash matches itself
+        # bracket expressions escape on every system
+        @test glob("[[]x", dir; join=false) == ["[x"]
+        @test glob("d[[]/f", dir; join=false) == [joinpath("d[", "f")]
+        @test glob("d[[]/*", dir; join=false) == [joinpath("d[", "f")]
         if !Sys.iswindows()
+            @test glob("\\[x", dir; join=false) == ["[x"]
+            @test glob("d\\[/f", dir; join=false) == [joinpath("d[", "f")]
+            @test glob("d\\[/*", dir; join=false) == [joinpath("d[", "f")]
             @test glob("a\\*b", dir; join=false) == ["a*b"]
             @test glob("q\\?", dir; join=false) == ["q?"]
             @test glob("b\\\\c", dir; join=false) == ["b\\c"]
-            @test Glob.GlobMatch("b\\\\c").pattern == Any["b\\c"]
+            @test glob("a[*]b", dir; join=false) == ["a*b"]
+            @test glob("q[?]", dir; join=false) == ["q?"]
+            @test glob("b[\\]c", dir; join=false) == ["b\\c"]
+        end
+    end
+    @test Glob._globmatch("\\[x", false).pattern == Any["[x"]
+    @test Glob._globmatch("a\\", false).pattern == Any["a\\"]  # a trailing backslash matches itself
+    @test Glob._globmatch("b\\\\c", false).pattern == Any["b\\c"]
+end
+
+@testset "backslash is a path separator on Windows" begin
+    gm = Glob._globmatch("a\\b/c\\\\d", true)
+    @test gm.pattern == Any["a", "b", "c", "", "d"]
+    gm = Glob._globmatch("a\\*.txt", true)
+    @test gm.pattern[1] == "a"
+    @test gm.pattern[2] isa Glob.FilenameMatch
+    @test occursin(gm, ["a", "f.txt"])
+    @test Glob._globmatch("a\\**\\b", true).pattern == Any["a", Glob.GlobStar(), "b"]
+    # a backslash is never an escape, so `\*` is a separator followed by a wildcard
+    gm = Glob._globmatch("a\\*", true)
+    @test occursin(gm, ["a", "x"])
+    @test !occursin(gm, ["a*"])
+    @test_throws ErrorException Glob._globmatch("\\a", true)
+    @test_throws ErrorException Glob._globmatch("/a", true)
+    @test_throws ErrorException Glob._globmatch("/a", false)
+    # elsewhere, a leading backslash escapes the character after it
+    @test Glob._globmatch("\\a", false).pattern == Any["a"]
+    @test Glob.GlobMatch("a\\b").pattern == (Sys.iswindows() ? Any["a", "b"] : Any["ab"])
+    @test sprint(show, Glob._globmatch("a\\b\\[*]", true)) == "glob\"a/b/[*]\""
+    if Sys.iswindows()
+        mktempdir() do dir
+            mkdir(joinpath(dir, "sub"))
+            touch(joinpath(dir, "sub", "f.txt"))
+            touch(joinpath(dir, "sub", "g.md"))
+            @test glob("sub\\*.txt", dir; join=false) == [joinpath("sub", "f.txt")]
+            @test glob("sub/*.txt", dir; join=false) == [joinpath("sub", "f.txt")]
+            @test glob(joinpath(dir, "sub", "*.txt")) == [joinpath(dir, "sub", "f.txt")]
+            @test glob(joinpath(dir, "**", "*.md")) == [joinpath(dir, "sub", "g.md")]
         end
     end
 end
@@ -639,9 +682,9 @@ end
     @test Glob.GlobMatch("a[*]b").pattern == Any["a*b"]
     @test Glob.GlobMatch("d[[]/f").pattern == Any["d[", "f"]
     @test Glob.GlobMatch("q[?]/[]]x").pattern == Any["q?", "]x"]
-    @test Glob.GlobMatch("b[\\]c").pattern == Any["b\\c"]
+    @test Glob._globmatch("b[\\]c", false).pattern == Any["b\\c"]
     @test Glob.GlobMatch("x[.]y").pattern == Any["x.y"]
-    @test Glob.GlobMatch("[a]\\*").pattern == Any["a*"]
+    @test Glob._globmatch("[a]\\*", false).pattern == Any["a*"]
     @test Glob.GlobMatch("[!]").pattern == Any["[!]"]
     @test Glob.GlobMatch("[!]]").pattern[1] isa Glob.FilenameMatch  # anything but `]`
     # a leading period must be matched by a period, not a bracket expression
@@ -652,7 +695,7 @@ end
     # the literal agrees with what `FilenameMatch` would match
     names = ["a*b", "axb", "d[", "q?", "]x", "b\\c", "x.y", "xzy", ".x", "a*", "[!]", "!"]
     for p in ["a[*]b", "d[[]", "q[?]", "[]]x", "b[\\]c", "x[.]y", "[a]\\*", "[!]"]
-        lit = Glob.GlobMatch(p).pattern[1]
+        lit = Glob._globmatch(p, false).pattern[1]
         @test lit isa AbstractString
         for s in names
             @test (lit == s) == occursin(Glob.FilenameMatch(p, Glob.PERIOD | Glob.PATHNAME), s)
