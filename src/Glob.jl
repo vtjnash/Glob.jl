@@ -426,6 +426,11 @@ end
     glob"pattern"
 
 Returns a `Glob.GlobMatch` object, which can be used with `glob()` or `readdir()`.
+
+The pattern is split into path components at each `/`, and on Windows also at each `\\`. Elsewhere,
+`\\` escapes the character after it, but on Windows it is a path separator and never an escape
+character. To match `*`, `?` or `[` literally on any system, write it as a bracket expression
+containing just that character, such as `[*]`.
 """
 (macro glob_str end, macro glob_mstr end, GlobMatch)
 
@@ -437,11 +442,15 @@ struct GlobMatch
     GlobMatch(pattern) = isempty(pattern) ? error("GlobMatch pattern cannot be an empty vector") : new(pattern)
 end
 GlobMatch(gm::GlobMatch) = gm
-function GlobMatch(pattern::AbstractString)
-    if isempty(pattern) || first(pattern) == '/'
-        error("Glob pattern cannot be empty or start with a / character")
+GlobMatch(pattern::AbstractString) = _globmatch(pattern, Sys.iswindows())
+
+# Parse a glob pattern string. When `windows` is true, `\` is a path separator, like `/`, and
+# not an escape character.
+function _globmatch(pattern::AbstractString, windows::Bool)
+    if isempty(pattern) || first(pattern) == '/' || (windows && first(pattern) == '\\')
+        error("Glob pattern cannot be empty or start with a path separator")
     end
-    pat = split(pattern, '/')
+    pat = windows ? split(pattern, ('/', '\\')) : split(pattern, '/')
     glob = Vector{Any}(undef, length(pat))
     extended = false
     for i in eachindex(pat)
@@ -457,7 +466,7 @@ function GlobMatch(pattern::AbstractString)
         while next !== nothing
             c, j = next
             next = iterate(p, j)
-            if c == '\\'
+            if c == '\\' && !windows
                 # an escaped character is never a wildcard
                 escaped = true
                 next === nothing && break
