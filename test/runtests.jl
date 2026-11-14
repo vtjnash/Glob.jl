@@ -424,6 +424,65 @@ end
 @test_throws ErrorException Glob.GlobMatch("")
 @test_throws ErrorException Glob.GlobMatch("/a/b/c")
 
+@testset "show round-trips" begin
+    # structural equality, independent of the implementation
+    same(a::AbstractString, b) = b isa AbstractString && a == b
+    same(a::Glob.FilenameMatch, b) = b isa Glob.FilenameMatch && a.pattern == b.pattern && a.options == b.options
+    same(a::Glob.GlobStar, b) = b isa Glob.GlobStar
+    same(a::Regex, b) = b isa Regex && a.pattern == b.pattern && a.compile_options == b.compile_options && a.match_options == b.match_options
+    same(a::Glob.GlobMatch, b) = b isa Glob.GlobMatch && length(a.pattern) == length(b.pattern) && all(map(same, a.pattern, b.pattern))
+    # printing `x` gives code that evaluates to the same value, and prints the same again
+    function roundtrip(x)
+        s = sprint(show, x)
+        y = Core.eval(@__MODULE__, Meta.parse(s))
+        return same(x, y) && sprint(show, y) == s
+    end
+    literal(x) = startswith(sprint(show, x), x isa Glob.GlobMatch ? "glob\"" : "fn\"")
+    # before Julia 1.5, a literal cannot contain `"` or end with `\`
+    raw = isdefined(Base, :escape_raw_string)
+    unprintable(p) = !raw && (occursin('"', p) || endswith(p, '\\'))
+    parsed = ["a", "a/b", "a*/b?", "[*]", "a[*]*", "x/**/y", "**", "a/**", "a/", "a//b",
+              "[.]x", "x[.]y", "[!]", "[!]]", "[a-z]*", "[[:alpha:]]x", "a]", "[", "[]", "[]]",
+              ".x", "é*/ü?", "a\\*b", "a/\\[x", "a\\", "b[\\]c", "*\\", "a\\\\b", "a\"b", "*\"",
+              "\"\\*"]
+    for p in parsed
+        gm = Glob.GlobMatch(p)
+        @test roundtrip(gm)
+        # a pattern parsed from a string always prints as a `glob"..."` literal
+        @test literal(gm) || unprintable(p)
+    end
+    # components that a `glob"..."` literal cannot express print as a constructor call
+    for v in Any[Any["a/b"], Any["", "a"], Any[""], Any[fn"a*"i], Any[fn"abc"pd], Any[fn"**"pd],
+                 Any[fn"a/b*"pd], Any[fn"*"], Any[r"a.*"], Any["a", r"b"i, fn"c*"pd],
+                 Any[Glob.GlobMatch("a").pattern[1], Glob.GlobStar(), fn"*.jl"pd]]
+        gm = Glob.GlobMatch(v)
+        @test roundtrip(gm)
+    end
+    # a literal `\` can be printed only where `\` is not a path separator
+    @test roundtrip(Glob.GlobMatch(Any["a\\b"]))
+    @test !literal(Glob.GlobMatch(Any["a/b"]))
+    @test !literal(Glob.GlobMatch(Any[fn"a*"i]))
+    @test !literal(Glob.GlobMatch(Any[fn"**"pd]))
+    @test !literal(Glob.GlobMatch(Any[""]))
+    # strings that a `glob"..."` literal can express print as one, escaped as needed
+    for v in Any[Any["a*"], Any["**"], Any["a?", "[b]"], Any["x", ""], Any[".x"], Any["a]"],
+                 Any["a\"b"], Any["a", Glob.GlobStar(), fn"*.jl"pd]]
+        gm = Glob.GlobMatch(v)
+        @test roundtrip(gm)
+        @test literal(gm) || !raw && any(p -> p isa AbstractString && occursin('"', p), v)
+    end
+    @test sprint(show, Glob.GlobMatch(Any["a*", "**"])) == "glob\"a[*]/[*][*]\""
+    # `FilenameMatch`, with every combination of flags
+    for p in ["abc", "a*b?", "[a-z]", "a\\*", "*\\", "a\"b", "\\\"", "é?"], flags in 0:31
+        fm = Glob.FilenameMatch(p, flags)
+        @test roundtrip(fm)
+        @test literal(fm) || unprintable(p)
+    end
+    # options outside the known flags
+    @test roundtrip(Glob.FilenameMatch("a*", 0x40))
+    @test !literal(Glob.FilenameMatch("a*", 0x40))
+end
+
 @testset "occursin(GlobMatch, Array)" begin
     # Basic string matching
     @test occursin(glob"src/foo/test.jl", ["src", "foo", "test.jl"])

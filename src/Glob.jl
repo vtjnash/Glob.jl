@@ -84,6 +84,15 @@ macro fn_str(pattern, flags...) FilenameMatch(pattern, flags...) end
 macro fn_mstr(pattern, flags...) FilenameMatch(pattern, flags...) end
 
 function show(io::IO, fn::FilenameMatch)
+    if !_can_print_raw(fn.pattern) || (fn.options & ~(CASELESS|PERIOD|NOESCAPE|PATHNAME|EXTENDED)) != 0
+        # an `fn"..."` literal cannot represent this
+        print(io, "Glob.FilenameMatch(")
+        show(io, fn.pattern)
+        print(io, ", ")
+        show(io, fn.options)
+        print(io, ')')
+        return
+    end
     print(io, "fn\"")
     _print_raw(io, fn.pattern)
     print(io, '"')
@@ -486,14 +495,24 @@ function GlobMatch(pattern::AbstractString)
 end
 
 function show(io::IO, gm::GlobMatch)
-    for pat in gm.pattern
-        if !isa(pat, AbstractString) && !isa(pat, FilenameMatch) && !isa(pat, GlobStar)
-            print(io, "Glob.GlobMatch(")
-            show(io, gm.pattern)
-            print(io, ')')
-            return
-        end
+    s = _glob_literal(gm)
+    if s === nothing
+        print(io, "Glob.GlobMatch(")
+        show(io, gm.pattern)
+        print(io, ')')
+    else
+        print(io, "glob\"")
+        _print_raw(io, s)
+        print(io, '"')
     end
+end
+
+# The contents of a `glob"..."` literal that parses back to the components of `gm`, or
+# `nothing` if there is none. There is none when a component is not a string, `GlobStar` or
+# `FilenameMatch`, when a string contains a path separator, when a `FilenameMatch` has other
+# options than the ones `glob"..."` gives it or would parse as something else, or when the
+# first component is empty.
+function _glob_literal(gm::GlobMatch)
     body = IOBuffer()
     notfirst = false
     for pat in gm.pattern
@@ -503,22 +522,42 @@ function show(io::IO, gm::GlobMatch)
             print(body, pat.pattern)
         elseif isa(pat, GlobStar)
             print(body, "**")
-        else
+        elseif isa(pat, AbstractString)
             _print_literal(body, pat)
+        else
+            return nothing
         end
     end
-    print(io, "glob\"")
-    _print_raw(io, String(take!(body)))
-    print(io, '"')
+    s = String(take!(body))
+    _can_print_raw(s) || return nothing
+    back = try
+        GlobMatch(s)
+    catch err
+        err isa ErrorException || rethrow()
+        return nothing
+    end
+    length(back.pattern) == length(gm.pattern) || return nothing
+    for (a, b) in zip(gm.pattern, back.pattern)
+        _same_component(a, b) || return nothing
+    end
+    return s
 end
+
+_same_component(a, b) =
+    isa(a, AbstractString) ? isa(b, AbstractString) && a == b :
+    isa(a, FilenameMatch) ? isa(b, FilenameMatch) && a.pattern == b.pattern && a.options == b.options :
+    isa(a, GlobStar) && isa(b, GlobStar)
 
 # Print `s` as the contents of a non-standard string literal such as `glob"..."`, escaping
 # each `"` and the backslashes before one or at the end, so that it parses back to `s`.
-# Julia before 1.5 lacks `escape_raw_string`, so there `s` is printed unescaped.
+# Julia before 1.5 lacks `escape_raw_string`, so there `s` is printed unescaped, which only
+# works if it has no `"` and does not end with `\`.
 @static if isdefined(Base, :escape_raw_string)
     _print_raw(io::IO, s::AbstractString) = Base.escape_raw_string(io, s)
+    _can_print_raw(s::AbstractString) = true
 else
     _print_raw(io::IO, s::AbstractString) = print(io, s)
+    _can_print_raw(s::AbstractString) = !occursin('"', s) && !endswith(s, '\\')
 end
 
 # Print a literal path component so that it parses back to the same string, escaping each
