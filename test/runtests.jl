@@ -313,7 +313,10 @@ end
 @test_types glob"ab/[/]d".pattern (AbstractString, AbstractString, AbstractString)
 @test_types glob"ab/[/d".pattern (AbstractString, AbstractString, AbstractString)
 @test_types glob"ab/[]/d".pattern (AbstractString, AbstractString, AbstractString)
-@test_types glob"ab/[]]/d".pattern (AbstractString, Glob.FilenameMatch, AbstractString)
+@test_types glob"ab/[]]/d".pattern (AbstractString, AbstractString, AbstractString)
+@test glob"ab/[]]/d".pattern[2] == "]"
+@test glob"ab/[]]]/d".pattern[2] == "]]"
+@test_types glob"ab/[]a]/d".pattern (AbstractString, Glob.FilenameMatch, AbstractString)
 
 # Tests run from any directory, so use dirname(@__DIR__) to get project root
 const root = dirname(@__DIR__)
@@ -403,7 +406,10 @@ function test_string(x1)
 end
 
 test_string("""Glob.GlobMatch(Any["base", r"h\\.+"])""")
-test_string("""glob"base/*/a/[b]\"""")
+test_string("""glob"base/*/a/[bc]\"""")
+test_string("""glob"base/a[*]b/[[]x/c[?][\\]\"""")
+@test sprint(show, glob"a[b]/\[c") == "glob\"ab/[[]c\""
+@test sprint(show, Glob.GlobMatch(Any["a*", "**"])) == "glob\"a[*]/[*][*]\""
 test_string("""fn"base/*/a/[b]\"ipedx""")
 test_string("""fn"base/*/a/[b]\"""")
 
@@ -617,6 +623,43 @@ end
             @test glob("q\\?", dir; join=false) == ["q?"]
             @test glob("b\\\\c", dir; join=false) == ["b\\c"]
             @test Glob.GlobMatch("b\\\\c").pattern == Any["b\\c"]
+        end
+    end
+end
+
+@testset "one-character bracket expressions are literal" begin
+    @test Glob.GlobMatch("a[*]b").pattern == Any["a*b"]
+    @test Glob.GlobMatch("d[[]/f").pattern == Any["d[", "f"]
+    @test Glob.GlobMatch("q[?]/[]]x").pattern == Any["q?", "]x"]
+    @test Glob.GlobMatch("b[\\]c").pattern == Any["b\\c"]
+    @test Glob.GlobMatch("x[.]y").pattern == Any["x.y"]
+    @test Glob.GlobMatch("[a]\\*").pattern == Any["a*"]
+    @test Glob.GlobMatch("[!]").pattern == Any["[!]"]
+    @test Glob.GlobMatch("[!]]").pattern[1] isa Glob.FilenameMatch  # anything but `]`
+    # a leading period must be matched by a period, not a bracket expression
+    @test Glob.GlobMatch("[.]x").pattern[1] isa Glob.FilenameMatch
+    # components with other wildcards still need a matcher
+    @test Glob.GlobMatch("a[*]*").pattern[1] isa Glob.FilenameMatch
+    @test Glob.GlobMatch("a[bc]").pattern[1] isa Glob.FilenameMatch
+    # the literal agrees with what `FilenameMatch` would match
+    names = ["a*b", "axb", "d[", "q?", "]x", "b\\c", "x.y", "xzy", ".x", "a*", "[!]", "!"]
+    for p in ["a[*]b", "d[[]", "q[?]", "[]]x", "b[\\]c", "x[.]y", "[a]\\*", "[!]"]
+        lit = Glob.GlobMatch(p).pattern[1]
+        @test lit isa AbstractString
+        for s in names
+            @test (lit == s) == occursin(Glob.FilenameMatch(p, Glob.PERIOD | Glob.PATHNAME), s)
+        end
+    end
+    mktempdir() do dir
+        # `[` is the only one of these characters that Windows allows in a file name
+        names = Sys.iswindows() ? ["[x", ".h", "h"] : ["[x", ".h", "h", "a*b", "axb"]
+        for name in names
+            touch(joinpath(dir, name))
+        end
+        @test glob("[[]x", dir; join=false) == ["[x"]
+        @test glob("[.]h", dir; join=false) == []
+        if !Sys.iswindows()
+            @test glob("a[*]b", dir; join=false) == ["a*b"]
         end
     end
 end

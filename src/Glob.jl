@@ -462,6 +462,10 @@ function GlobMatch(pattern::AbstractString)
                 escaped = true
                 next === nothing && break
                 next = iterate(p, next[2])
+            elseif c == '[' && (lit = _single_char_bracket(p, j, j == firstindex(p) + 1)) !== nothing
+                # a bracket expression with one character matches only that character
+                escaped = true
+                next = iterate(p, lit[2])
             elseif (c == '*') | (c == '?') |
                     (c == '[' && _match(p, j, '\0', false, extended)[2])
                 ispattern = true
@@ -498,10 +502,22 @@ function show(io::IO, gm::GlobMatch)
         elseif isa(pat, GlobStar)
             print(io, "**")
         else
-            print(io, pat)
+            _print_literal(io, pat)
         end
     end
     print(io, '"')
+end
+
+# Print a literal path component so that it parses back to the same string, escaping each
+# special character with a one-character bracket expression.
+function _print_literal(io::IO, s::AbstractString)
+    for c in s
+        if (c == '*') | (c == '?') | (c == '[') | (c == '\\')
+            print(io, '[', c, ']')
+        else
+            print(io, c)
+        end
+    end
 end
 
 """
@@ -631,8 +647,25 @@ function occursin_sub(gm::GlobMatch, pi::Int, arr::AbstractVector)
     end
 end
 
-# Remove the backslash escapes from a pattern without wildcards, as `FilenameMatch` would
-# when matching it. A trailing backslash matches itself.
+# If the bracket expression that starts just before index `j` of `p` contains exactly one
+# character, as in `[*]`, return that character and the index after the closing `]`, and
+# otherwise `nothing`. Such an expression matches only that character. `[!]` is not one, and
+# neither is a `[.]` at the start of a component, since a leading period must be matched by a
+# period rather than by a bracket expression.
+function _single_char_bracket(p::AbstractString, j, leading::Bool)
+    next = iterate(p, j)
+    next === nothing && return nothing
+    c, k = next
+    ((c == '!') | (leading & (c == '.'))) && return nothing
+    next = iterate(p, k)
+    next === nothing && return nothing
+    d, l = next
+    d == ']' || return nothing
+    return (c, l)
+end
+
+# Remove the backslash escapes and one-character bracket expressions from a pattern without
+# wildcards, as `FilenameMatch` would when matching it. A trailing backslash matches itself.
 function _unescape(p::AbstractString)
     io = IOBuffer()
     next = iterate(p)
@@ -642,6 +675,9 @@ function _unescape(p::AbstractString)
         if c == '\\' && next !== nothing
             c, j = next
             next = iterate(p, j)
+        elseif c == '[' && (lit = _single_char_bracket(p, j, j == firstindex(p) + 1)) !== nothing
+            c = lit[1]
+            next = iterate(p, lit[2])
         end
         print(io, c)
     end
