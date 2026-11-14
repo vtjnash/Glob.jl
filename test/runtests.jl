@@ -413,6 +413,14 @@ test_string("""glob"base/a[*]b/[[]x/c[?][\\]\"""")
 test_string("""fn"base/*/a/[b]\"ipedx""")
 test_string("""fn"base/*/a/[b]\"""")
 
+if isdefined(Base, :escape_raw_string)
+    # a trailing backslash or a `"` must be escaped in the string literal
+    test_string("glob\"*\\\\\"")
+    test_string("glob\"a\\\"b\"")
+    test_string("fn\"*\\\\\"p")
+    test_string("fn\"*\\\\\\\"x\"")
+end
+
 @test_throws ErrorException Glob.GlobMatch("")
 @test_throws ErrorException Glob.GlobMatch("/a/b/c")
 
