@@ -84,7 +84,9 @@ macro fn_str(pattern, flags...) FilenameMatch(pattern, flags...) end
 macro fn_mstr(pattern, flags...) FilenameMatch(pattern, flags...) end
 
 function show(io::IO, fn::FilenameMatch)
-    print(io, "fn\"", fn.pattern, '"')
+    print(io, "fn\"")
+    _print_raw(io, fn.pattern)
+    print(io, '"')
     (fn.options & CASELESS) != 0 && print(io, 'i')
     (fn.options & PERIOD  ) != 0 && print(io, 'p')
     (fn.options & NOESCAPE) != 0 && print(io, 'e')
@@ -492,20 +494,31 @@ function show(io::IO, gm::GlobMatch)
             return
         end
     end
-    print(io, "glob\"")
+    body = IOBuffer()
     notfirst = false
     for pat in gm.pattern
-        notfirst && print(io, '/')
+        notfirst && print(body, '/')
         notfirst = true
         if isa(pat, FilenameMatch)
-            print(io, pat.pattern)
+            print(body, pat.pattern)
         elseif isa(pat, GlobStar)
-            print(io, "**")
+            print(body, "**")
         else
-            _print_literal(io, pat)
+            _print_literal(body, pat)
         end
     end
+    print(io, "glob\"")
+    _print_raw(io, String(take!(body)))
     print(io, '"')
+end
+
+# Print `s` as the contents of a non-standard string literal such as `glob"..."`, escaping
+# each `"` and the backslashes before one or at the end, so that it parses back to `s`.
+# Julia before 1.5 lacks `escape_raw_string`, so there `s` is printed unescaped.
+@static if isdefined(Base, :escape_raw_string)
+    _print_raw(io::IO, s::AbstractString) = Base.escape_raw_string(io, s)
+else
+    _print_raw(io::IO, s::AbstractString) = print(io, s)
 end
 
 # Print a literal path component so that it parses back to the same string, escaping each
